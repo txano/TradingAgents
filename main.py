@@ -1,31 +1,50 @@
-from tradingagents.graph.trading_graph import TradingAgentsGraph
-from tradingagents.default_config import DEFAULT_CONFIG
+from pathlib import Path
 
 from dotenv import load_dotenv
 
-# Load environment variables from .env file
+from tradingagents.default_config import DEFAULT_CONFIG
+from tradingagents.earnings import EarningsLayer
+from tradingagents.graph.trading_graph import TradingAgentsGraph
+
 load_dotenv()
 
-# Create a custom config
+# ---------------------------------------------------------------------------
+# Config
+# ---------------------------------------------------------------------------
 config = DEFAULT_CONFIG.copy()
-config["deep_think_llm"] = "gpt-5.4-mini"  # Use a different model
-config["quick_think_llm"] = "gpt-5.4-mini"  # Use a different model
-config["max_debate_rounds"] = 1  # Increase debate rounds
+config["llm_provider"] = "google"
+config["deep_think_llm"] = "gemini-3.1-pro-preview"
+config["quick_think_llm"] = "gemini-2.5-flash"
+config["max_debate_rounds"] = 1
 
-# Configure data vendors (default uses yfinance, no extra API keys needed)
-config["data_vendors"] = {
-    "core_stock_apis": "yfinance",           # Options: alpha_vantage, yfinance
-    "technical_indicators": "yfinance",      # Options: alpha_vantage, yfinance
-    "fundamental_data": "yfinance",          # Options: alpha_vantage, yfinance
-    "news_data": "yfinance",                 # Options: alpha_vantage, yfinance
-}
-
-# Initialize with custom config
+# ---------------------------------------------------------------------------
+# Step 1 — run the standard TradingAgents pipeline
+# ---------------------------------------------------------------------------
 ta = TradingAgentsGraph(debug=True, config=config)
 
-# forward propagate
-_, decision = ta.propagate("NVDA", "2024-05-10")
-print(decision)
+TICKER = "CLS"
+TRADE_DATE = "2026-04-24"
 
-# Memorize mistakes and reflect
-# ta.reflect_and_remember(1000) # parameter is the position returns
+final_state, decision = ta.propagate(TICKER, TRADE_DATE)
+print(f"\nStandard decision: {decision}\n")
+
+# ---------------------------------------------------------------------------
+# Step 2 — run the Earnings Layer on top of the existing output
+# ---------------------------------------------------------------------------
+# Point save_dir at the same folder where the existing reports landed so the
+# earnings_brief.md sits alongside the other analyst reports.
+reports_dir = Path(config.get("results_dir", "reports")) / TICKER
+
+earnings_layer = EarningsLayer(
+    llm=ta.deep_thinking_llm,
+    news_lookback_days=90,  # pull 3 months of news and analyst changes
+)
+
+brief = earnings_layer.analyze(
+    ticker=TICKER,
+    trade_date=TRADE_DATE,
+    final_state=final_state,
+    save_dir=str(reports_dir),
+)
+
+print(brief)

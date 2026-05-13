@@ -34,6 +34,8 @@ MACD Related:
 
 Momentum Indicators:
 - rsi: RSI: Measures momentum to flag overbought/oversold conditions. Usage: Apply 70/30 thresholds and watch for divergence to signal reversals. Tips: In strong trends, RSI may remain extreme; always cross-check with trend analysis.
+- adx: ADX: Measures trend strength (not direction). Usage: Distinguish trending from choppy/sideways markets; values above 25 indicate a strong trend. Tips: Use alongside directional indicators like MACD — ADX tells you HOW strong, not which direction.
+- cci: CCI: Cyclical momentum indicator. Usage: Identify overbought/oversold conditions using ±100 thresholds; complements RSI pre-earnings for detecting exhaustion. Tips: Best in trending markets; combine with volume analysis to confirm signals.
 
 Volatility Indicators:
 - boll: Bollinger Middle: A 20 SMA serving as the basis for Bollinger Bands. Usage: Acts as a dynamic benchmark for price movement. Tips: Combine with the upper and lower bands to effectively spot breakouts or reversals.

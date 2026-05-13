@@ -217,3 +217,14 @@ __marimo__/
 
 # Cache
 **/data_cache/
+
+# Personal reports and trading data (not for version control)
+reports/
+.DS_Store
+**/.DS_Store
+
+# Claude Code workspace files
+.claude/
+
+# Obsidian vault
+.obsidian/

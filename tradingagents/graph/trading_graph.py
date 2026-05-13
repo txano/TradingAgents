@@ -151,6 +151,12 @@ class TradingAgentsGraph:
             if effort:
                 kwargs["effort"] = effort
 
+        # Allow per-worker API key override (used by parallel screening workers).
+        # If present this overrides the environment variable lookup in the client.
+        api_key = self.config.get("api_key")
+        if api_key:
+            kwargs["api_key"] = api_key
+
         return kwargs
 
     def _create_tool_nodes(self) -> Dict[str, ToolNode]:

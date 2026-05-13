@@ -1,10 +1,29 @@
 import os
 from typing import Any, Optional
 
+import httpx
 from langchain_openai import ChatOpenAI
 
 from .base_client import BaseLLMClient, normalize_content
 from .validators import validate_model
+
+# Per-api-key httpx clients for DeepSeek.  One pool per key so that parallel
+# workers using different keys don't share connections.  Each pool is sized
+# generously enough to support several concurrent in-flight requests per key.
+_DEEPSEEK_HTTP_CLIENTS: dict[str, httpx.Client] = {}
+_DEEPSEEK_CLIENTS_LOCK = __import__("threading").Lock()
+
+
+def _get_deepseek_http_client(api_key: str = "") -> httpx.Client:
+    pool_key = api_key or "__default__"
+    with _DEEPSEEK_CLIENTS_LOCK:
+        client = _DEEPSEEK_HTTP_CLIENTS.get(pool_key)
+        if client is None or client.is_closed:
+            client = httpx.Client(
+                limits=httpx.Limits(max_connections=10, max_keepalive_connections=4),
+            )
+            _DEEPSEEK_HTTP_CLIENTS[pool_key] = client
+    return client
 
 
 class NormalizedChatOpenAI(ChatOpenAI):
@@ -81,6 +100,19 @@ class OpenAIClient(BaseLLMClient):
         # all model families. Third-party providers use Chat Completions.
         if self.provider == "openai":
             llm_kwargs["use_responses_api"] = True
+
+        # DeepSeek thinking mode requires reasoning_content to be echoed back
+        # in every subsequent message. LangChain strips it, breaking multi-turn
+        # debate rounds. Disable via extra_body so the field goes into the HTTP
+        # request body rather than as a keyword arg to completions.create().
+        if self.provider == "deepseek":
+            llm_kwargs["extra_body"] = {"thinking": {"type": "disabled"}}
+            if "timeout" not in llm_kwargs:
+                llm_kwargs["timeout"] = 120
+            if "http_client" not in llm_kwargs:
+                llm_kwargs["http_client"] = _get_deepseek_http_client(
+                    llm_kwargs.get("api_key", "")
+                )
 
         return NormalizedChatOpenAI(**llm_kwargs)
 

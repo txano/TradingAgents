@@ -1,0 +1,850 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TradingAgents Dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --surface: #1e293b;
+      --border: #334155;
+      --text: #f1f5f9;
+      --muted: #94a3b8;
+      --green: #22c55e;
+      --red: #ef4444;
+      --accent: #6366f1;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 14px; }
+
+    header {
+      padding: 18px 32px; border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; gap: 16px; background: var(--surface);
+    }
+    header h1 { font-size: 18px; font-weight: 700; letter-spacing: -0.01em; }
+    header .subtitle { color: var(--muted); font-size: 12px; }
+    header .meta { margin-left: auto; font-size: 12px; color: var(--muted); }
+
+    .main { padding: 24px 32px; max-width: 1600px; margin: 0 auto; }
+
+    /* ── Stats ── */
+    .stats-grid {
+      display: grid; grid-template-columns: repeat(6, 1fr);
+      gap: 12px; margin-bottom: 12px;
+    }
+    .stat-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 10px; padding: 16px 18px;
+    }
+    .stat-card .label { color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 8px; }
+    .stat-card .value { font-size: 22px; font-weight: 700; line-height: 1; }
+    .stat-card .sub { color: var(--muted); font-size: 11px; margin-top: 4px; }
+    .pos { color: var(--green); }
+    .neg { color: var(--red); }
+
+    /* ── Section headers ── */
+    .section-header {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 10px;
+    }
+    .section-header .section-title { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.07em; }
+    .section-header .section-meta  { font-size: 11px; color: var(--muted); }
+
+    /* ── Avg Returns Row ── */
+    .avg-section { margin-bottom: 20px; }
+    .avg-cards { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; }
+
+    /* ── Portfolio Returns Row ── */
+    .returns-section { margin-bottom: 20px; }
+    .returns-cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+
+    /* ── Toggle pill ── */
+    .pill {
+      display: inline-flex; border: 1px solid var(--border); border-radius: 6px;
+      overflow: hidden; flex-shrink: 0;
+    }
+    .pill button {
+      padding: 4px 12px; border: none; background: transparent;
+      color: var(--muted); cursor: pointer; font-size: 11px; font-weight: 500;
+      transition: background 0.15s, color 0.15s;
+    }
+    .pill button.active { background: var(--accent); color: #fff; }
+    .pill button:not(.active):hover { color: var(--text); }
+
+    /* ── Charts ── */
+    .charts-row { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; margin-bottom: 16px; }
+    .charts-row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px; }
+    .chart-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 10px; padding: 18px 20px;
+    }
+    .chart-card-header {
+      display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px;
+    }
+    .chart-card-header h3 {
+      font-size: 11px; color: var(--muted);
+      text-transform: uppercase; letter-spacing: 0.07em; margin: 0;
+    }
+    .chart-wrap { position: relative; height: 210px; }
+
+    /* ── Filters ── */
+    .filters {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 10px; padding: 14px 18px; margin-bottom: 14px;
+      display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap;
+    }
+    .fg { display: flex; flex-direction: column; gap: 4px; }
+    .fg label { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.07em; }
+    .fg input, .fg select {
+      background: var(--bg); border: 1px solid var(--border);
+      color: var(--text); padding: 6px 10px; border-radius: 6px; font-size: 13px; outline: none;
+    }
+    .fg input:focus, .fg select:focus { border-color: var(--accent); }
+    .fg input[type="date"] { width: 138px; color-scheme: dark; }
+    .btn {
+      padding: 6px 14px; border-radius: 6px; border: 1px solid var(--border);
+      background: transparent; color: var(--muted); cursor: pointer; font-size: 12px;
+      transition: border-color 0.15s, color 0.15s;
+    }
+    .btn:hover { border-color: var(--text); color: var(--text); }
+
+    /* ── Table ── */
+    .table-wrap { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+    .table-top { padding: 12px 18px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+    .table-top h3 { font-size: 13px; font-weight: 600; }
+    .table-top .count { font-size: 12px; color: var(--muted); }
+    .table-scroll { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; white-space: nowrap; }
+    thead th {
+      padding: 9px 14px; text-align: left;
+      font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em;
+      border-bottom: 1px solid var(--border); cursor: pointer; user-select: none;
+    }
+    thead th:hover { color: var(--text); }
+    thead th.asc::after { content: " ↑"; }
+    thead th.desc::after { content: " ↓"; }
+    tbody tr { border-bottom: 1px solid rgba(51,65,85,0.4); }
+    tbody tr:last-child { border-bottom: none; }
+    tbody tr:hover { background: rgba(255,255,255,0.025); }
+    tbody td { padding: 9px 14px; font-size: 13px; }
+    .badge {
+      display: inline-block; padding: 2px 7px; border-radius: 4px;
+      font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em;
+    }
+    .b-win   { background: rgba(34,197,94,0.12);   color: var(--green); }
+    .b-loss  { background: rgba(239,68,68,0.12);   color: var(--red); }
+    .b-be    { background: rgba(148,163,184,0.12); color: var(--muted); }
+    .b-buy   { background: rgba(34,197,94,0.08);   color: var(--green); }
+    .b-short { background: rgba(239,68,68,0.08);   color: var(--red); }
+
+    .empty { padding: 48px; text-align: center; color: var(--muted); }
+
+    @media (max-width: 1200px) {
+      .stats-grid    { grid-template-columns: repeat(3, 1fr); }
+      .avg-cards     { grid-template-columns: repeat(3, 1fr); }
+      .returns-cards { grid-template-columns: repeat(2, 1fr); }
+      .charts-row    { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 768px) {
+      .stats-grid    { grid-template-columns: repeat(2, 1fr); }
+      .avg-cards     { grid-template-columns: repeat(2, 1fr); }
+      .returns-cards { grid-template-columns: repeat(2, 1fr); }
+      .charts-row2   { grid-template-columns: 1fr; }
+      .main { padding: 16px; }
+      header { padding: 14px 16px; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>TradingAgents</h1>
+    <div class="subtitle">Trade Performance Dashboard</div>
+  </div>
+  <div class="meta" id="meta"></div>
+</header>
+
+<div class="main">
+
+  <!-- Stats row 1 -->
+  <div class="stats-grid">
+    <div class="stat-card">
+      <div class="label">Total Trades</div>
+      <div class="value" id="s-total">—</div>
+      <div class="sub" id="s-total-sub"></div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Win Rate</div>
+      <div class="value" id="s-wr">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Total P&amp;L</div>
+      <div class="value" id="s-pnl">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Avg P&amp;L / Trade</div>
+      <div class="value" id="s-avg">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Best Trade</div>
+      <div class="value pos" id="s-best">—</div>
+      <div class="sub" id="s-best-t"></div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Worst Trade</div>
+      <div class="value neg" id="s-worst">—</div>
+      <div class="sub" id="s-worst-t"></div>
+    </div>
+  </div>
+
+  <!-- Avg Returns row -->
+  <div class="avg-section">
+    <div class="section-header">
+      <span class="section-title">Avg Return by Outcome</span>
+      <div class="pill">
+        <button id="btn-arith" class="active" onclick="setAvgMode('arith')">Arithmetic</button>
+        <button id="btn-wtd"   onclick="setAvgMode('weighted')">Weighted</button>
+      </div>
+    </div>
+    <div class="avg-cards">
+      <div class="stat-card">
+        <div class="label">Avg Win ($)</div>
+        <div class="value pos" id="s-avgwin-val">—</div>
+        <div class="sub"    id="s-avgwin-pct"></div>
+      </div>
+      <div class="stat-card">
+        <div class="label">Avg Loss ($)</div>
+        <div class="value neg" id="s-avgloss-val">—</div>
+        <div class="sub"    id="s-avgloss-pct"></div>
+      </div>
+      <div class="stat-card">
+        <div class="label">Profit Factor</div>
+        <div class="value"  id="s-pf">—</div>
+        <div class="sub">|avg win| ÷ |avg loss|</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">Expectancy / Trade</div>
+        <div class="value"  id="s-exp">—</div>
+        <div class="sub">WR × avg win + LR × avg loss</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">Avg Win / Avg Loss %</div>
+        <div class="value"  id="s-ratio-pct">—</div>
+        <div class="sub" id="s-ratio-mode"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Portfolio Returns row -->
+  <div class="returns-section">
+    <div class="section-header">
+      <span class="section-title">Portfolio Returns</span>
+      <span class="section-meta" id="s-returns-meta"></span>
+    </div>
+    <div class="returns-cards">
+      <div class="stat-card">
+        <div class="label">TWR (Cumulative)</div>
+        <div class="value" id="s-twr">—</div>
+        <div class="sub">Geometric chain of per-trade HPRs</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">TWR (Annualized)</div>
+        <div class="value" id="s-twr-ann">—</div>
+        <div class="sub">Compounded over trading period</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">MWR (Cumulative)</div>
+        <div class="value" id="s-mwr">—</div>
+        <div class="sub">Σ P&amp;L ÷ Σ Capital Deployed</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">MWR (Annualized)</div>
+        <div class="value" id="s-mwr-ann">—</div>
+        <div class="sub">Over first-to-last exit date span</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Charts row 1 -->
+  <div class="charts-row">
+    <div class="chart-card">
+      <div class="chart-card-header">
+        <h3>Cumulative P&amp;L over time</h3>
+      </div>
+      <div class="chart-wrap"><canvas id="c-cum"></canvas></div>
+    </div>
+    <div class="chart-card">
+      <div class="chart-card-header">
+        <h3>Monthly P&amp;L</h3>
+      </div>
+      <div class="chart-wrap"><canvas id="c-monthly"></canvas></div>
+    </div>
+  </div>
+
+  <!-- Charts row 2 -->
+  <div class="charts-row2">
+    <div class="chart-card">
+      <div class="chart-card-header">
+        <h3>P&amp;L by Ticker</h3>
+      </div>
+      <div class="chart-wrap"><canvas id="c-ticker"></canvas></div>
+    </div>
+    <div class="chart-card">
+      <div class="chart-card-header">
+        <h3>Wins &amp; Losses by Direction</h3>
+        <div class="pill">
+          <button id="btn-dir-count" class="active" onclick="setDirMode('count')">Count</button>
+          <button id="btn-dir-value" onclick="setDirMode('value')">Value ($)</button>
+        </div>
+      </div>
+      <div class="chart-wrap"><canvas id="c-dir"></canvas></div>
+    </div>
+  </div>
+
+  <!-- Filters -->
+  <div class="filters">
+    <div class="fg">
+      <label>Ticker</label>
+      <input id="f-ticker" type="text" placeholder="AAPL…" style="width:90px" />
+    </div>
+    <div class="fg">
+      <label>Direction</label>
+      <select id="f-dir">
+        <option value="">All</option>
+        <option>BUY</option>
+        <option>SHORT</option>
+      </select>
+    </div>
+    <div class="fg">
+      <label>Outcome</label>
+      <select id="f-outcome">
+        <option value="">All</option>
+        <option>WIN</option>
+        <option>LOSS</option>
+        <option value="BREAK_EVEN">Break Even</option>
+      </select>
+    </div>
+    <div class="fg">
+      <label>Sector</label>
+      <select id="f-sector"><option value="">All</option></select>
+    </div>
+    <div class="fg">
+      <label>From</label>
+      <input id="f-from" type="date" />
+    </div>
+    <div class="fg">
+      <label>To</label>
+      <input id="f-to" type="date" />
+    </div>
+    <button class="btn" onclick="clearFilters()">Clear</button>
+  </div>
+
+  <!-- Table -->
+  <div class="table-wrap">
+    <div class="table-top">
+      <h3>Trades</h3>
+      <div class="count" id="t-count"></div>
+    </div>
+    <div class="table-scroll">
+      <div id="t-body"><div class="empty">Loading…</div></div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+let ALL = [];
+let sortKey = 'exit_date', sortDir = -1;
+let charts = {};
+let avgMode = 'arith';   // 'arith' | 'weighted'
+let dirMode = 'count';   // 'count' | 'value'
+
+const $ = id => document.getElementById(id);
+const money = n => n == null ? '—' : (n < 0 ? '-$' : '$') + Math.abs(n).toLocaleString('en-US', {minimumFractionDigits:2,maximumFractionDigits:2});
+const pct   = n => n == null ? '—' : (n >= 0 ? '+' : '') + (+n).toFixed(2) + '%';
+const pctR  = n => n == null ? '—' : (n >= 0 ? '+' : '') + (n * 100).toFixed(2) + '%';  // from ratio (0.05 → +5.00%)
+const cc    = n => n > 0 ? 'pos' : n < 0 ? 'neg' : '';
+
+const gridColor = 'rgba(51,65,85,0.5)';
+const tickColor = '#94a3b8';
+
+// ── Toggle state ──────────────────────────────────────────────────────────────
+
+function setAvgMode(mode) {
+  avgMode = mode;
+  $('btn-arith').classList.toggle('active', mode === 'arith');
+  $('btn-wtd').classList.toggle('active',   mode === 'weighted');
+  renderAvgReturns(getDisplayTrades());
+}
+
+function setDirMode(mode) {
+  dirMode = mode;
+  $('btn-dir-count').classList.toggle('active', mode === 'count');
+  $('btn-dir-value').classList.toggle('active', mode === 'value');
+  buildDir(getDisplayTrades());
+}
+
+// ── Consolidate fills ─────────────────────────────────────────────────────────
+// Rows with the same ticker + exit_date are partial fills of one trade.
+// Merge them: sum pnl/shares, weighted-avg prices, recompute outcome/pnl_pct.
+
+function consolidate(trades) {
+  const map = new Map();
+
+  trades.forEach(t => {
+    const key = (t.ticker || '') + '|' + (t.exit_date || '');
+    const sh  = t.shares || 0;
+    if (!map.has(key)) {
+      map.set(key, {
+        ...t,
+        pnl:        t.pnl || 0,
+        shares:     sh,
+        _fills:     1,
+        _entryWtd:  (t.entry_price || 0) * sh,
+        _exitWtd:   (t.exit_price  || 0) * sh,
+        _sharesWtd: sh,
+      });
+    } else {
+      const g = map.get(key);
+      g._fills++;
+      g.pnl        += t.pnl || 0;
+      g.shares     += sh;
+      g._entryWtd  += (t.entry_price || 0) * sh;
+      g._exitWtd   += (t.exit_price  || 0) * sh;
+      g._sharesWtd += sh;
+      if (!g.key_lesson    && t.key_lesson)    g.key_lesson    = t.key_lesson;
+      if (!g.analysis_path && t.analysis_path) g.analysis_path = t.analysis_path;
+      if (!g.trade_date    && t.trade_date)    g.trade_date    = t.trade_date;
+    }
+  });
+
+  return Array.from(map.values()).map(g => {
+    if (g._sharesWtd > 0) {
+      g.entry_price = g._entryWtd / g._sharesWtd;
+      g.exit_price  = g._exitWtd  / g._sharesWtd;
+      const cost    = g.entry_price * g._sharesWtd;
+      g.pnl_pct     = cost > 0 ? g.pnl / cost * 100 : null;
+    }
+    // Recompute outcome from merged pnl (tolerance for float noise)
+    g.outcome = g.pnl > 0.005 ? 'WIN' : g.pnl < -0.005 ? 'LOSS' : 'BREAK_EVEN';
+    delete g._entryWtd; delete g._exitWtd; delete g._sharesWtd;
+    return g;
+  });
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+
+async function init() {
+  try {
+    const r = await fetch('/api/trades');
+    ALL = await r.json();
+    ALL.sort((a,b) => (a.exit_date||'').localeCompare(b.exit_date||''));
+    fillSectorFilter();
+    render();
+  } catch(e) {
+    $('t-body').innerHTML = '<div class="empty">Could not load trades.json — make sure the server is running.</div>';
+  }
+}
+
+function fillSectorFilter() {
+  const sectors = [...new Set(ALL.map(t => t.sector).filter(Boolean))].sort();
+  const sel = $('f-sector');
+  sectors.forEach(s => { const o = document.createElement('option'); o.value = s; o.textContent = s; sel.appendChild(o); });
+}
+
+// Filter raw rows (no outcome filter yet), then consolidate, then apply outcome filter.
+// Outcome filter runs on consolidated data so partial fills don't skew it.
+function getDisplayTrades() {
+  const tk  = $('f-ticker').value.trim().toUpperCase();
+  const dir = $('f-dir').value;
+  const out = $('f-outcome').value;
+  const sec = $('f-sector').value;
+  const fr  = $('f-from').value;
+  const to  = $('f-to').value;
+
+  const raw = ALL.filter(t =>
+    (!tk  || (t.ticker||'').includes(tk)) &&
+    (!dir || t.direction === dir) &&
+    (!sec || t.sector === sec) &&
+    (!fr  || (t.exit_date||'') >= fr) &&
+    (!to  || (t.exit_date||'') <= to)
+  );
+
+  let trades = consolidate(raw);
+  if (out) trades = trades.filter(t => t.outcome === out);
+  return trades;
+}
+
+function render() {
+  const trades    = getDisplayTrades();
+  const totalFills = trades.reduce((s,t) => s + (t._fills||1), 0);
+  const allFills   = ALL.length;
+
+  $('meta').textContent = allFills === totalFills
+    ? `${trades.length} trades · ${totalFills} fills · last refreshed ${new Date().toLocaleTimeString()}`
+    : `${trades.length} trades · ${totalFills} fills (${allFills} total) · last refreshed ${new Date().toLocaleTimeString()}`;
+
+  renderStats(trades);
+  renderAvgReturns(trades);
+  renderReturns(trades);
+  renderCharts(trades);
+  renderTable(trades);
+}
+
+// ── Stats row 1 ───────────────────────────────────────────────────────────────
+
+function renderStats(trades) {
+  const wins  = trades.filter(t => t.outcome === 'WIN').length;
+  const total = trades.reduce((s,t) => s + (t.pnl||0), 0);
+  const avg   = trades.length ? total / trades.length : 0;
+  const wr    = trades.length ? wins / trades.length * 100 : null;
+  const sorted = [...trades].sort((a,b) => (a.pnl||0) - (b.pnl||0));
+  const best = sorted[sorted.length-1], worst = sorted[0];
+
+  $('s-total').textContent = trades.length;
+  const totalFills = trades.reduce((s,t) => s + (t._fills||1), 0);
+  $('s-total-sub').textContent = totalFills !== trades.length ? `${totalFills} fills` : '';
+
+  const wrEl = $('s-wr');
+  wrEl.textContent  = wr != null ? wr.toFixed(1)+'%' : '—';
+  wrEl.className    = 'value ' + (wr >= 50 ? 'pos' : wr != null ? 'neg' : '');
+  const pEl = $('s-pnl');  pEl.textContent = money(+total.toFixed(2)); pEl.className = 'value ' + cc(total);
+  const aEl = $('s-avg');  aEl.textContent = trades.length ? money(+avg.toFixed(2)) : '—'; aEl.className = 'value ' + cc(avg);
+  $('s-best').textContent   = best  ? money(best.pnl)  : '—';
+  $('s-best-t').textContent = best  ? best.ticker  : '';
+  $('s-worst').textContent   = worst ? money(worst.pnl) : '—';
+  $('s-worst-t').textContent = worst ? worst.ticker : '';
+}
+
+// ── Avg Returns row ───────────────────────────────────────────────────────────
+
+function costBasis(t) {
+  const ep = t.entry_price, sh = t.shares;
+  if (ep && sh) return ep * sh;
+  const pp = t.pnl_pct;
+  if (pp && t.pnl) return Math.abs(t.pnl / pp * 100);
+  return null;
+}
+
+function avgReturn(group) {
+  if (!group.length) return { val: null, pct: null };
+  const sumPnl = group.reduce((s,t) => s + (t.pnl||0), 0);
+  if (avgMode === 'arith') {
+    const avgVal = sumPnl / group.length;
+    const avgPct = group.reduce((s,t) => s + (t.pnl_pct||0), 0) / group.length;
+    return { val: avgVal, pct: avgPct };
+  } else {
+    let wSumPct = 0, wSum = 0;
+    group.forEach(t => {
+      const cb = costBasis(t);
+      if (cb) { wSumPct += (t.pnl_pct||0) * cb; wSum += cb; }
+    });
+    const avgVal = sumPnl / group.length;
+    const avgPct = wSum ? wSumPct / wSum : group.reduce((s,t) => s + (t.pnl_pct||0), 0) / group.length;
+    return { val: avgVal, pct: avgPct };
+  }
+}
+
+function renderAvgReturns(trades) {
+  const wins   = trades.filter(t => t.outcome === 'WIN');
+  const losses = trades.filter(t => t.outcome === 'LOSS');
+  const wr     = trades.length ? wins.length / trades.length : 0;
+  const lr     = trades.length ? losses.length / trades.length : 0;
+
+  const wStats = avgReturn(wins);
+  const lStats = avgReturn(losses);
+
+  $('s-avgwin-val').textContent  = wStats.val != null ? money(+wStats.val.toFixed(2)) : '—';
+  $('s-avgwin-pct').textContent  = wStats.pct != null ? pct(wStats.pct) : '';
+  $('s-avgloss-val').textContent = lStats.val != null ? money(+lStats.val.toFixed(2)) : '—';
+  $('s-avgloss-pct').textContent = lStats.pct != null ? pct(lStats.pct) : '';
+
+  const pfEl = $('s-pf');
+  if (wStats.val != null && lStats.val != null && lStats.val !== 0) {
+    const pf = Math.abs(wStats.val) / Math.abs(lStats.val);
+    pfEl.textContent = pf.toFixed(2);
+    pfEl.className   = 'value ' + (pf >= 1 ? 'pos' : 'neg');
+  } else { pfEl.textContent = '—'; pfEl.className = 'value'; }
+
+  const expEl = $('s-exp');
+  if (wStats.val != null && lStats.val != null) {
+    const exp = wr * wStats.val + lr * lStats.val;
+    expEl.textContent = money(+exp.toFixed(2));
+    expEl.className   = 'value ' + cc(exp);
+  } else { expEl.textContent = '—'; expEl.className = 'value'; }
+
+  const ratioEl = $('s-ratio-pct');
+  if (wStats.pct != null && lStats.pct != null && lStats.pct !== 0) {
+    const r = Math.abs(wStats.pct) / Math.abs(lStats.pct);
+    ratioEl.textContent = r.toFixed(2) + 'x';
+    ratioEl.className   = 'value ' + (r >= 1 ? 'pos' : 'neg');
+  } else { ratioEl.textContent = '—'; ratioEl.className = 'value'; }
+  $('s-ratio-mode').textContent = avgMode === 'arith' ? 'arithmetic avg' : 'weighted avg';
+}
+
+// ── Portfolio Returns (TWR + MWR) ────────────────────────────────────────────
+//
+// TWR — Time-Weighted Return
+//   Chains each trade's holding-period return geometrically.
+//   Eliminates the effect of position sizing so it measures signal quality.
+//   Formula: Π(1 + HPR_i) – 1  where HPR_i = pnl_i / cost_basis_i
+//
+// MWR — Money-Weighted Return (simplified)
+//   Measures how much each dollar deployed actually earned.
+//   Formula: Σ pnl / Σ cost_basis
+//   (Proper IRR requires entry dates which may be absent for IBKR imports;
+//   this approximation is equivalent to Modified Dietz with equal weighting.)
+//
+// Both are annualized using (1 + r)^(365/days) – 1 when period ≥ 7 days.
+
+function computeReturns(trades) {
+  const valid = trades.filter(t => t.pnl != null);
+  if (!valid.length) return null;
+
+  const sorted = [...valid].sort((a,b) => (a.exit_date||'').localeCompare(b.exit_date||''));
+
+  let twrFactor = 1;
+  let totalCost = 0, totalPnl = 0;
+
+  sorted.forEach(t => {
+    const cb = costBasis(t);
+    const p  = t.pnl || 0;
+    totalPnl += p;
+    if (cb && cb > 0) {
+      twrFactor *= (1 + p / cb);
+      totalCost += cb;
+    } else if (t.pnl_pct != null) {
+      // No cost basis available; use pnl_pct for TWR chain only
+      twrFactor *= (1 + t.pnl_pct / 100);
+    }
+  });
+
+  const twr = twrFactor - 1;
+  const mwr = totalCost > 0 ? totalPnl / totalCost : null;
+
+  // Date range (first → last exit_date)
+  const dates = sorted.map(t => t.exit_date).filter(Boolean);
+  let days = 0;
+  if (dates.length >= 2) {
+    days = (new Date(dates[dates.length-1]) - new Date(dates[0])) / 86400000;
+  }
+
+  const annualize = r => days >= 7 ? Math.pow(1 + r, 365 / days) - 1 : null;
+
+  return {
+    twr,
+    twrAnn:    annualize(twr),
+    mwr,
+    mwrAnn:    mwr !== null ? annualize(mwr) : null,
+    days:      Math.round(days),
+    totalCost,
+    totalPnl,
+  };
+}
+
+function renderReturns(trades) {
+  const r = computeReturns(trades);
+
+  if (!r) {
+    ['s-twr','s-twr-ann','s-mwr','s-mwr-ann'].forEach(id => { $(id).textContent = '—'; $(id).className = 'value'; });
+    $('s-returns-meta').textContent = '';
+    return;
+  }
+
+  const set = (id, val) => {
+    const el = $(id);
+    el.textContent = val != null ? pctR(val) : '—';
+    el.className   = 'value ' + (val != null ? cc(val) : '');
+  };
+
+  set('s-twr',     r.twr);
+  set('s-twr-ann', r.twrAnn);
+  set('s-mwr',     r.mwr);
+  set('s-mwr-ann', r.mwrAnn);
+
+  const meta = r.days > 0
+    ? `${r.days}-day period · capital deployed: ${money(Math.round(r.totalCost))}`
+    : 'single-day period · no annualization';
+  $('s-returns-meta').textContent = meta;
+}
+
+// ── Charts ────────────────────────────────────────────────────────────────────
+
+function renderCharts(trades) {
+  buildCum(trades);
+  buildMonthly(trades);
+  buildTicker(trades);
+  buildDir(trades);
+}
+
+const BASE_OPTS = { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } };
+
+function buildCum(trades) {
+  const pts = [...trades].sort((a,b) => (a.exit_date||'').localeCompare(b.exit_date||''));
+  let cum = 0;
+  const labels = [], data = [];
+  pts.forEach(t => { cum += t.pnl||0; labels.push(t.exit_date||''); data.push(+cum.toFixed(2)); });
+  const green = (data[data.length-1] ?? 0) >= 0;
+  if (charts.cum) charts.cum.destroy();
+  charts.cum = new Chart($('c-cum'), {
+    type: 'line',
+    data: { labels, datasets: [{ data, fill: true, borderColor: green ? '#22c55e' : '#ef4444', backgroundColor: green ? 'rgba(34,197,94,0.08)' : 'rgba(239,68,68,0.08)', borderWidth: 2, pointRadius: data.length > 60 ? 0 : 3, pointHoverRadius: 4, tension: 0.3 }] },
+    options: { ...BASE_OPTS, scales: { x: { display: false }, y: { grid: { color: gridColor }, ticks: { color: tickColor, callback: v => '$'+v.toLocaleString() } } } }
+  });
+}
+
+function buildMonthly(trades) {
+  const m = {};
+  trades.forEach(t => { const k = (t.exit_date||'').slice(0,7); if (k) m[k] = (m[k]||0) + (t.pnl||0); });
+  const labels = Object.keys(m).sort();
+  const data   = labels.map(l => +m[l].toFixed(2));
+  if (charts.monthly) charts.monthly.destroy();
+  charts.monthly = new Chart($('c-monthly'), {
+    type: 'bar',
+    data: { labels, datasets: [{ data, backgroundColor: data.map(v => v >= 0 ? 'rgba(34,197,94,0.65)' : 'rgba(239,68,68,0.65)'), borderRadius: 4 }] },
+    options: { ...BASE_OPTS, scales: { x: { ticks: { color: tickColor, maxRotation: 45 }, grid: { display: false } }, y: { grid: { color: gridColor }, ticks: { color: tickColor, callback: v => '$'+v.toLocaleString() } } } }
+  });
+}
+
+function buildTicker(trades) {
+  const m = {};
+  trades.forEach(t => { m[t.ticker] = (m[t.ticker]||0) + (t.pnl||0); });
+  const sorted = Object.entries(m).sort((a,b) => b[1]-a[1]).slice(0,14);
+  const labels = sorted.map(e => e[0]);
+  const data   = sorted.map(e => +e[1].toFixed(2));
+  if (charts.ticker) charts.ticker.destroy();
+  charts.ticker = new Chart($('c-ticker'), {
+    type: 'bar',
+    data: { labels, datasets: [{ data, backgroundColor: data.map(v => v >= 0 ? 'rgba(34,197,94,0.65)' : 'rgba(239,68,68,0.65)'), borderRadius: 3 }] },
+    options: { ...BASE_OPTS, indexAxis: 'y', scales: { x: { grid: { color: gridColor }, ticks: { color: tickColor, callback: v => '$'+v.toLocaleString() } }, y: { ticks: { color: tickColor }, grid: { display: false } } } }
+  });
+}
+
+function buildDir(trades) {
+  const dirs = ['BUY', 'SHORT'];
+  if (charts.dir) charts.dir.destroy();
+
+  let datasets, yCallback, stacked;
+
+  if (dirMode === 'count') {
+    stacked = true;
+    yCallback = v => v;
+    datasets = [
+      { label: 'WIN',        backgroundColor: 'rgba(34,197,94,0.7)',    data: dirs.map(d => trades.filter(t => t.direction===d && t.outcome==='WIN').length) },
+      { label: 'LOSS',       backgroundColor: 'rgba(239,68,68,0.7)',    data: dirs.map(d => trades.filter(t => t.direction===d && t.outcome==='LOSS').length) },
+      { label: 'BREAK EVEN', backgroundColor: 'rgba(148,163,184,0.35)', data: dirs.map(d => trades.filter(t => t.direction===d && t.outcome==='BREAK_EVEN').length) },
+    ];
+  } else {
+    stacked = false;
+    yCallback = v => '$' + v.toLocaleString();
+    const sumPnl = (d, outcome) =>
+      +trades.filter(t => t.direction===d && t.outcome===outcome)
+             .reduce((s,t) => s + (t.pnl||0), 0).toFixed(2);
+    datasets = [
+      { label: 'WIN P&L',  backgroundColor: 'rgba(34,197,94,0.7)',  data: dirs.map(d => sumPnl(d,'WIN')),  borderRadius: 4 },
+      { label: 'LOSS P&L', backgroundColor: 'rgba(239,68,68,0.7)',  data: dirs.map(d => sumPnl(d,'LOSS')), borderRadius: 4 },
+    ];
+  }
+
+  charts.dir = new Chart($('c-dir'), {
+    type: 'bar',
+    data: { labels: dirs, datasets },
+    options: {
+      ...BASE_OPTS,
+      plugins: { legend: { display: true, labels: { color: tickColor, boxWidth: 12, font: { size: 11 } } } },
+      scales: {
+        x: { stacked, ticks: { color: tickColor }, grid: { display: false } },
+        y: { stacked, grid: { color: gridColor }, ticks: { color: tickColor, callback: yCallback } }
+      }
+    }
+  });
+}
+
+// ── Table ─────────────────────────────────────────────────────────────────────
+
+const COLS = [
+  { key:'ticker',      label:'Ticker' },
+  { key:'direction',   label:'Direction' },
+  { key:'shares',      label:'Shares' },
+  { key:'entry_price', label:'Entry' },
+  { key:'exit_price',  label:'Exit' },
+  { key:'pnl',         label:'P&L' },
+  { key:'pnl_pct',     label:'P&L %' },
+  { key:'outcome',     label:'Outcome' },
+  { key:'exit_date',   label:'Date' },
+  { key:'sector',      label:'Sector' },
+  { key:'_fills',      label:'Fills' },
+];
+
+function renderTable(trades) {
+  const rows = [...trades].sort((a,b) => {
+    let av = a[sortKey], bv = b[sortKey];
+    if (av == null) return sortDir;
+    if (bv == null) return -sortDir;
+    return typeof av === 'string' ? av.localeCompare(bv)*sortDir : (av-bv)*sortDir;
+  });
+
+  const totalFills = rows.reduce((s,t) => s + (t._fills||1), 0);
+  $('t-count').textContent = totalFills !== rows.length
+    ? `${rows.length} trade${rows.length!==1?'s':''} · ${totalFills} fills`
+    : `${rows.length} trade${rows.length!==1?'s':''}`;
+
+  if (!rows.length) {
+    $('t-body').innerHTML = '<div class="empty">No trades match the current filters.</div>';
+    return;
+  }
+
+  let h = '<table><thead><tr>';
+  COLS.forEach(c => {
+    const cls = sortKey===c.key ? (sortDir>0?'asc':'desc') : '';
+    h += `<th class="${cls}" onclick="setSort('${c.key}')">${c.label}</th>`;
+  });
+  h += '</tr></thead><tbody>';
+
+  rows.forEach(t => {
+    const pnl = t.pnl||0;
+    const dirBadge = t.direction==='BUY' ? 'b-buy' : 'b-short';
+    const outBadge = t.outcome==='WIN' ? 'b-win' : t.outcome==='LOSS' ? 'b-loss' : 'b-be';
+    const fillsCell = (t._fills||1) > 1
+      ? `<td style="text-align:center;color:var(--muted);font-size:11px">×${t._fills}</td>`
+      : `<td style="text-align:center;color:var(--border);font-size:11px">—</td>`;
+    h += `<tr>
+      <td><strong>${t.ticker||'—'}</strong></td>
+      <td><span class="badge ${dirBadge}">${t.direction||'—'}</span></td>
+      <td style="text-align:right">${t.shares!=null ? (+t.shares).toLocaleString() : '—'}</td>
+      <td style="text-align:right">${t.entry_price!=null ? '$'+(+t.entry_price).toFixed(2) : '—'}</td>
+      <td style="text-align:right">${t.exit_price!=null ? '$'+(+t.exit_price).toFixed(2) : '—'}</td>
+      <td style="text-align:right" class="${cc(pnl)}">${money(pnl)}</td>
+      <td style="text-align:right" class="${cc(pnl)}">${pct(t.pnl_pct)}</td>
+      <td><span class="badge ${outBadge}">${t.outcome||'—'}</span></td>
+      <td>${t.exit_date||'—'}</td>
+      <td style="color:var(--muted);font-size:12px">${t.sector||'—'}</td>
+      ${fillsCell}
+    </tr>`;
+  });
+  h += '</tbody></table>';
+  $('t-body').innerHTML = h;
+}
+
+function setSort(key) {
+  sortDir = sortKey === key ? sortDir * -1 : (key === 'exit_date' ? -1 : 1);
+  sortKey = key;
+  render();
+}
+
+function clearFilters() {
+  ['f-ticker','f-from','f-to'].forEach(id => $(id).value = '');
+  ['f-dir','f-outcome','f-sector'].forEach(id => $(id).value = '');
+  render();
+}
+
+['f-ticker','f-dir','f-outcome','f-sector','f-from','f-to']
+  .forEach(id => $(id).addEventListener('input', render));
+
+init();
+</script>
+</body>
+</html>
