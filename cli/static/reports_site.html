@@ -229,6 +229,32 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:1
 ::-webkit-scrollbar{width:5px}::-webkit-scrollbar-track{background:transparent}
 ::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.09);border-radius:3px}
 ::-webkit-scrollbar-thumb:hover{background:rgba(255,255,255,0.16)}
+
+/* ── Run tab ───────────────────────────────────────────────── */
+.run-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:20px;margin-bottom:28px}
+.run-card{background:var(--card);border:1px solid var(--border);border-radius:var(--r);padding:22px 24px}
+.run-card h3{font-size:13px;font-weight:700;letter-spacing:-.2px;margin-bottom:4px;color:var(--text)}
+.run-card p{font-size:11.5px;color:var(--dim);margin-bottom:18px;line-height:1.45}
+.run-card.full{grid-column:1/-1}
+label{display:block;font-size:11px;font-weight:600;color:var(--dim);margin-bottom:5px;letter-spacing:.04em;text-transform:uppercase}
+input[type=text],input[type=date],input[type=number],select{width:100%;background:var(--surface);border:1px solid var(--border2);border-radius:var(--r-xs);color:var(--text);font-size:12.5px;padding:7px 10px;font-family:var(--font);outline:none;transition:border-color .14s}
+input[type=text]:focus,input[type=date]:focus,input[type=number]:focus,select:focus{border-color:var(--accent)}
+select option{background:var(--surface)}
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}
+.form-row-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px}
+.form-field{margin-bottom:12px}
+.checkrow{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:12px}
+.checkrow label{display:flex;align-items:center;gap:5px;text-transform:none;letter-spacing:0;font-size:12px;font-weight:500;color:var(--text);cursor:pointer}
+.checkrow input[type=checkbox]{width:auto;accent-color:var(--accent)}
+.btn-run{background:var(--accent);color:#fff;border:none;border-radius:var(--r-sm);padding:9px 20px;font-size:12.5px;font-weight:700;cursor:pointer;transition:background .14s;letter-spacing:.02em}
+.btn-run:hover{background:var(--accent-dim)}
+.btn-run:disabled{opacity:.45;cursor:not-allowed}
+.job-log{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-sm);font-family:var(--mono);font-size:11.5px;color:var(--dim);padding:14px 16px;min-height:200px;max-height:500px;overflow-y:auto;white-space:pre-wrap;word-break:break-all;margin-top:16px;display:none}
+.job-log.active{display:block}
+.job-status{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:600;padding:3px 10px;border-radius:20px;margin-left:12px;vertical-align:middle}
+.job-status.running{background:var(--warn-bg);color:var(--warn);border:1px solid var(--warn-border)}
+.job-status.done{background:var(--win-bg);color:var(--win);border:1px solid var(--win-border)}
+.job-status.error{background:var(--loss-bg);color:var(--loss);border:1px solid var(--loss-border)}
 </style>
 </head>
 <body>
@@ -245,6 +271,8 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:1
     <div class="nav-item"        id="ni-trades"      onclick="go('trades')"><span class="nav-icon">◑</span> Trades</div>
     <div class="nav-item"        id="ni-reflections" onclick="go('reflections')"><span class="nav-icon">◐</span> Reflections</div>
     <div class="nav-item"        id="ni-performance" onclick="go('performance')"><span class="nav-icon">◉</span> Performance</div>
+    <div class="nav-sep">Actions</div>
+    <div class="nav-item"        id="ni-run"         onclick="go('run')"><span class="nav-icon">▶</span> Run</div>
   </div>
   <div class="sidebar-footer">
     <strong>Last built</strong>
@@ -258,6 +286,7 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:1
   <section class="view"        id="v-trades"></section>
   <section class="view"        id="v-reflections"></section>
   <section class="view"        id="v-performance"></section>
+  <section class="view"        id="v-run"></section>
 </main>
 
 <!-- Overlay (for allocation reports, reflection post-mortems, ticker earnings briefs) -->
@@ -730,6 +759,236 @@ function renderPerformance(){
   $('v-performance').innerHTML=h;
 }
 
+// ── Run tab ───────────────────────────────────────────────────────────────────
+const PROVIDERS = ['deepseek','openai','anthropic','google','xai','openrouter','ollama'];
+const MODELS = {
+  deepseek:   ['deepseek-chat','deepseek-reasoner'],
+  openai:     ['gpt-4.1','gpt-4o','o3','o4-mini'],
+  anthropic:  ['claude-opus-4-7','claude-sonnet-4-6','claude-haiku-4-5-20251001'],
+  google:     ['gemini-2.5-pro','gemini-2.0-flash'],
+  xai:        ['grok-3','grok-3-mini'],
+  openrouter: ['deepseek/deepseek-chat','openai/gpt-4.1','anthropic/claude-sonnet-4-6'],
+  ollama:     ['llama3.2','mistral'],
+};
+
+let _activeWs = null;
+
+function renderRun(){
+  const today = new Date().toISOString().slice(0,10);
+  function provOpts(sel='deepseek'){
+    return PROVIDERS.map(p=>`<option value="${p}"${p===sel?' selected':''}>${p}</option>`).join('');
+  }
+  function mdOpts(prov='deepseek',sel=''){
+    const list = MODELS[prov]||[];
+    return list.map(m=>`<option value="${m}"${m===sel?' selected':''}>${m}</option>`).join('');
+  }
+  function analystsCheck(){
+    return ['market','social','news','fundamentals'].map(a=>
+      `<label><input type="checkbox" value="${a}" checked> ${a}</label>`
+    ).join('');
+  }
+  function depthSel(id){
+    return `<select id="${id}"><option value="1">Shallow (1 round)</option><option value="3">Medium (3 rounds)</option><option value="5">Deep (5 rounds)</option></select>`;
+  }
+
+  const h = `
+<div class="ph"><h2>Run</h2><p>Launch analysis jobs directly from the browser.</p></div>
+<div class="run-grid">
+
+  <!-- Screen -->
+  <div class="run-card">
+    <h3>▶ Screen</h3>
+    <p>Batch analysis across multiple tickers with earnings scoring and allocation.</p>
+    <div class="form-field"><label>Tickers (comma-separated)</label><input type="text" id="sc-tickers" placeholder="AAPL, MSFT, NVDA"></div>
+    <div class="form-row">
+      <div><label>Date</label><input type="date" id="sc-date" value="${today}"></div>
+      <div><label>Budget ($)</label><input type="number" id="sc-budget" value="100000" min="1000"></div>
+    </div>
+    <div class="form-row">
+      <div><label>Depth</label>${depthSel('sc-depth')}</div>
+      <div><label>Workers</label><input type="number" id="sc-workers" value="1" min="1" max="8"></div>
+    </div>
+    <div class="form-row">
+      <div><label>Provider</label><select id="sc-prov" onchange="updateModels('sc')">${provOpts()}</select></div>
+    </div>
+    <div class="form-row">
+      <div><label>Quick model</label><select id="sc-qm">${mdOpts('deepseek','deepseek-chat')}</select></div>
+      <div><label>Deep model</label><select id="sc-dm">${mdOpts('deepseek','deepseek-chat')}</select></div>
+    </div>
+    <div class="form-field"><label>Analysts</label><div class="checkrow" id="sc-analysts">${analystsCheck()}</div></div>
+    <button class="btn-run" onclick="runJob('screen','sc')">Run Screen</button>
+    <span id="sc-status" class="job-status" style="display:none"></span>
+    <div class="job-log" id="sc-log"></div>
+  </div>
+
+  <!-- Analyze -->
+  <div class="run-card">
+    <h3>▶ Analyze</h3>
+    <p>Single-ticker deep-dive with full agent pipeline.</p>
+    <div class="form-row">
+      <div><label>Ticker</label><input type="text" id="an-ticker" placeholder="SPY" style="text-transform:uppercase"></div>
+      <div><label>Date</label><input type="date" id="an-date" value="${today}"></div>
+    </div>
+    <div class="form-row">
+      <div><label>Depth</label>${depthSel('an-depth')}</div>
+      <div><label>Provider</label><select id="an-prov" onchange="updateModels('an')">${provOpts()}</select></div>
+    </div>
+    <div class="form-row">
+      <div><label>Quick model</label><select id="an-qm">${mdOpts('deepseek','deepseek-chat')}</select></div>
+      <div><label>Deep model</label><select id="an-dm">${mdOpts('deepseek','deepseek-chat')}</select></div>
+    </div>
+    <div class="form-field"><label>Analysts</label><div class="checkrow" id="an-analysts">${analystsCheck()}</div></div>
+    <button class="btn-run" onclick="runJob('analyze','an')">Run Analysis</button>
+    <span id="an-status" class="job-status" style="display:none"></span>
+    <div class="job-log" id="an-log"></div>
+  </div>
+
+  <!-- Calibrate -->
+  <div class="run-card">
+    <h3>▶ Calibrate</h3>
+    <p>Compare screening predictions against actual earnings outcomes.</p>
+    <div class="form-field"><label>Screening run (leave blank for most recent uncalibrated)</label><input type="text" id="cal-run" placeholder="e.g. screening_2026-05-13_123456"></div>
+    <button class="btn-run" onclick="runJob('calibrate','cal')">Run Calibration</button>
+    <span id="cal-status" class="job-status" style="display:none"></span>
+    <div class="job-log" id="cal-log"></div>
+  </div>
+
+  <!-- Reflect -->
+  <div class="run-card">
+    <h3>▶ Reflect</h3>
+    <p>Post-mortem analysis on a closed trade from your trade history.</p>
+    <div class="form-row">
+      <div><label>Ticker</label><input type="text" id="rf-ticker" placeholder="AAPL"></div>
+      <div><label>Exit date</label><input type="date" id="rf-date"></div>
+    </div>
+    <div class="form-row">
+      <div><label>Provider</label><select id="rf-prov" onchange="updateModels('rf')">${provOpts()}</select></div>
+    </div>
+    <div class="form-row">
+      <div><label>Quick model</label><select id="rf-qm">${mdOpts('deepseek','deepseek-chat')}</select></div>
+      <div><label>Deep model</label><select id="rf-dm">${mdOpts('deepseek','deepseek-chat')}</select></div>
+    </div>
+    <button class="btn-run" onclick="runJob('reflect','rf')">Run Reflection</button>
+    <span id="rf-status" class="job-status" style="display:none"></span>
+    <div class="job-log" id="rf-log"></div>
+  </div>
+
+</div>`;
+  $('v-run').innerHTML = h;
+}
+
+function updateModels(prefix){
+  const prov = document.getElementById(prefix+'-prov').value;
+  const models = MODELS[prov] || [];
+  ['qm','dm'].forEach(id=>{
+    const sel = document.getElementById(prefix+'-'+id);
+    if(!sel) return;
+    sel.innerHTML = models.map(m=>`<option value="${m}">${m}</option>`).join('');
+    if(models.length) sel.value = models[0];
+  });
+}
+
+function _getAnalysts(prefix){
+  const boxes = document.querySelectorAll(`#${prefix}-analysts input[type=checkbox]`);
+  return Array.from(boxes).filter(b=>b.checked).map(b=>b.value);
+}
+
+async function runJob(type, prefix){
+  const logEl    = document.getElementById(prefix+'-log');
+  const statusEl = document.getElementById(prefix+'-status');
+  const btn      = document.querySelector(`#v-run [onclick="runJob('${type}','${prefix}')"]`);
+
+  logEl.textContent = '';
+  logEl.classList.add('active');
+  statusEl.style.display = 'inline-flex';
+  statusEl.className = 'job-status running';
+  statusEl.textContent = '⟳ running';
+  btn.disabled = true;
+
+  // Build params
+  let params = {};
+  const g = id => { const el=document.getElementById(id); return el?el.value:''; };
+
+  if(type === 'screen'){
+    params = {
+      tickers:     g('sc-tickers'),
+      date:        g('sc-date'),
+      depth:       g('sc-depth'),
+      workers:     g('sc-workers'),
+      budget:      g('sc-budget'),
+      provider:    g('sc-prov'),
+      quick_model: g('sc-qm'),
+      deep_model:  g('sc-dm'),
+      analysts:    _getAnalysts('sc'),
+    };
+  } else if(type === 'analyze'){
+    params = {
+      ticker:      g('an-ticker').toUpperCase(),
+      date:        g('an-date'),
+      depth:       g('an-depth'),
+      provider:    g('an-prov'),
+      quick_model: g('an-qm'),
+      deep_model:  g('an-dm'),
+      analysts:    _getAnalysts('an'),
+    };
+  } else if(type === 'calibrate'){
+    params = { run_name: g('cal-run') };
+  } else if(type === 'reflect'){
+    params = {
+      ticker:      g('rf-ticker').toUpperCase(),
+      exit_date:   g('rf-date'),
+      provider:    g('rf-prov'),
+      quick_model: g('rf-qm'),
+      deep_model:  g('rf-dm'),
+    };
+  }
+
+  let jobId;
+  try {
+    const res = await fetch('/api/jobs', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({type, params}),
+    });
+    if(!res.ok) throw new Error(await res.text());
+    ({job_id: jobId} = await res.json());
+  } catch(e){
+    logEl.textContent = 'Error starting job: ' + e.message;
+    statusEl.className = 'job-status error';
+    statusEl.textContent = '✕ error';
+    btn.disabled = false;
+    return;
+  }
+
+  // Stream via WebSocket
+  if(_activeWs) { try{_activeWs.close();}catch(e){} }
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const ws = new WebSocket(`${proto}//${location.host}/ws/${jobId}`);
+  _activeWs = ws;
+
+  ws.onmessage = e => {
+    if(e.data === '__DONE__'){
+      statusEl.className = 'job-status done';
+      statusEl.textContent = '✓ done';
+      btn.disabled = false;
+      return;
+    }
+    if(e.data === '__ERROR__'){
+      statusEl.className = 'job-status error';
+      statusEl.textContent = '✕ error';
+      btn.disabled = false;
+      return;
+    }
+    logEl.textContent += e.data + '\n';
+    logEl.scrollTop = logEl.scrollHeight;
+  };
+  ws.onerror = () => {
+    statusEl.className = 'job-status error';
+    statusEl.textContent = '✕ ws error';
+    btn.disabled = false;
+  };
+}
+
 // ── Boot ──────────────────────────────────────────────────────────────────────
 function render(v){
   if(v==='overview')    renderOverview();
@@ -737,6 +996,7 @@ function render(v){
   if(v==='trades')      renderTrades();
   if(v==='reflections') renderReflections();
   if(v==='performance') renderPerformance();
+  if(v==='run')         renderRun();
 }
 
 document.addEventListener('DOMContentLoaded',()=>{
