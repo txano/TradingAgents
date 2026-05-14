@@ -8,18 +8,13 @@ from tradingagents.graph.trading_graph import TradingAgentsGraph
 
 load_dotenv()
 
-# ---------------------------------------------------------------------------
-# Config
-# ---------------------------------------------------------------------------
+# DEFAULT_CONFIG already applies TRADINGAGENTS_* env-var overrides.
+# Override individual keys here only when you want a hard-coded value.
 config = DEFAULT_CONFIG.copy()
 config["llm_provider"] = "google"
 config["deep_think_llm"] = "gemini-3.1-pro-preview"
 config["quick_think_llm"] = "gemini-2.5-flash"
 config["max_debate_rounds"] = 1
-
-# ---------------------------------------------------------------------------
-# Step 1 — run the standard TradingAgents pipeline
-# ---------------------------------------------------------------------------
 ta = TradingAgentsGraph(debug=True, config=config)
 
 TICKER = "CLS"
