@@ -440,6 +440,19 @@ async def root():
     return HTMLResponse(html)
 
 
+@app.get("/api/trades")
+async def get_trades():
+    trades_path = Path.home() / ".tradingagents" / "trades.json"
+    try:
+        data = []
+        if trades_path.exists():
+            import json as _json
+            data = _json.loads(trades_path.read_text(encoding="utf-8"))
+        return JSONResponse(data)
+    except Exception as exc:
+        raise HTTPException(500, str(exc))
+
+
 @app.get("/api/data")
 async def get_data():
     try:
