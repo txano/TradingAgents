@@ -17,6 +17,7 @@ _ENV_OVERRIDES = {
     "TRADINGAGENTS_MAX_RISK_ROUNDS":      "max_risk_discuss_rounds",
     "TRADINGAGENTS_CHECKPOINT_ENABLED":   "checkpoint_enabled",
     "TRADINGAGENTS_BENCHMARK_TICKER":     "benchmark_ticker",
+    "TRADINGAGENTS_COUNCIL_ADVISOR_MODELS": "council_advisor_models",
 }
 
 
@@ -28,6 +29,8 @@ def _coerce(value: str, reference):
         return int(value)
     if isinstance(reference, float):
         return float(value)
+    if isinstance(reference, list):
+        return [item.strip() for item in value.split(",") if item.strip()]
     return value
 
 
@@ -70,6 +73,12 @@ DEFAULT_CONFIG = _apply_env_overrides({
     # Output language for analyst reports and final decision
     # Internal agent debate stays in English for reasoning quality
     "output_language": "English",
+    # Allocation council advisor models. Each entry is "provider:model"
+    # (e.g. "anthropic:claude-fable-5", "openai:gpt-5.4"). Advisors are
+    # assigned entries round-robin so the five perspectives come from
+    # genuinely different models instead of one model in five personas.
+    # Empty list = all advisors use the main deep-thinking LLM.
+    "council_advisor_models": [],
     # Debate and discussion settings
     "max_debate_rounds": 1,
     "max_risk_discuss_rounds": 1,

@@ -74,6 +74,16 @@ Scoring guide:
 - guidance_score: +5 = clearly bullish guidance expected, 0 = neutral, -5 = clearly bearish
 - setup_score: +5 = strong analyst upgrades and positive momentum going in, -5 = downgrades and negative momentum
 - signal BUY = favorable to go long before earnings, SHORT = favorable to short, SKIP = no clear edge
+
+Key reminders:
+- EPS beat alone does not guarantee a positive stock reaction. If the beat is driven by cost-cutting or one-time items while revenue growth, margins, or forward outlook are weakening, the stock can sell off especially after a strong pre-earnings run-up (e.g., DT, HOOD, ANET losses). Always assess the quality of the beat and whether it is already priced in.
+- Forward guidance is often the decisive catalyst. Look beyond the current quarter: is management likely to raise or cut guidance? Use recent analyst estimate revisions, industry data, and prior guidance patterns to anticipate the tone, not just the company's own historical beat rate.
+- Pre-earnings momentum matters. A sharp run-up into the print increases the risk of a "sell the news" reversal even on a beat; a deep sell-off beforehand may reduce downside asymmetry.
+- For guidance_score, consider whether consensus estimates already embed bullish or bearish expectations. If estimates have been repeatedly revised up and are clustered, even a reaffirmation may be taken negatively.
+- **Beat quality checklist**: a beat driven by cost-cutting or one‑time items, accompanied by declining revenue, shrinking margins, or rising debt, is a bearish signal. A beat with accelerating revenue and expanding margins is genuinely bullish.
+- **Guidance sensitivity**: high‑multiple growth stocks often drop sharply on cautious forward commentary even after a beat. When the company faces tough comps, macro headwinds (tariffs, forex), or decelerating user growth, assume guidance will disappoint and weight that in your guidance_score.
+- **Insider & institutional flow**: check the recent news and fundamentals reports for insider selling or large institutional disposals. Significant selling before the print is a strong contra‑indicator for a pre‑earnings long.
+
 ---
 """
 

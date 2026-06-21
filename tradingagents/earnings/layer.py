@@ -7,6 +7,7 @@ from pathlib import Path
 from tradingagents.earnings.data_fetcher import fetch_earnings_context
 from tradingagents.earnings.analyst import create_earnings_analyst
 from tradingagents.earnings.scorer import parse_score
+from tradingagents.allocation.fundamentals_scorer import fetch_fundamental_metrics, score_fundamentals
 
 
 class EarningsLayer:
@@ -77,10 +78,36 @@ class EarningsLayer:
         """Run earnings analysis and return (brief, score_dict).
 
         score_dict keys: earnings_date, beat_score, guidance_score, setup_score,
-        total_score, signal, confidence, one_liner.
+        total_score, signal, confidence, one_liner, fundamentals_score, bs_quality,
+        margin_trend, growth_quality, fundamentals_summary.
         """
         brief = self.analyze(ticker, trade_date, final_state, save_dir=save_dir)
         score = parse_score(brief)
+
+        fundamentals_report = final_state.get("fundamentals_report", "")
+        metrics = fetch_fundamental_metrics(ticker)
+        if fundamentals_report or metrics:
+            fund = score_fundamentals(self.llm, fundamentals_report, ticker, metrics=metrics)
+            if metrics:
+                fund["metrics"] = metrics
+        else:
+            fund = {
+                "fundamentals_score": 0, "balance_sheet": "Adequate",
+                "profitability": "Stable", "growth_quality": "Medium", "summary": "",
+            }
+        score.update({
+            "fundamentals_score":   fund["fundamentals_score"],
+            "bs_quality":           fund.get("balance_sheet",  "Adequate"),
+            "margin_trend":         fund.get("profitability",  "Stable"),
+            "growth_quality":       fund.get("growth_quality", "Medium"),
+            "fundamentals_summary": fund.get("summary", ""),
+        })
+
+        if save_dir:
+            (Path(save_dir) / "fundamentals_score.json").write_text(
+                json.dumps(fund, indent=2), encoding="utf-8"
+            )
+
         return brief, score
 
     # ------------------------------------------------------------------

@@ -8,14 +8,18 @@ import requests
 _SEND_URL = "https://gdcdyn.interactivebrokers.com/Universal/servlet/FlexStatementService.SendRequest"
 _GET_URL = "https://gdcdyn.interactivebrokers.com/Universal/servlet/FlexStatementService.GetStatement"
 
-_POLL_INTERVAL = 2    # seconds between GetStatement polls
-_MAX_ATTEMPTS = 20    # 40 seconds max wait for report generation
+_POLL_INTERVAL = 3    # seconds between GetStatement polls
+_MAX_ATTEMPTS = 40    # 120 seconds max wait for report generation
 
-# Error codes IBKR returns when the server is temporarily overloaded.
+# Error codes IBKR returns on SendRequest when the server is temporarily busy.
 # These are transient — retrying after a short wait usually succeeds.
-_TRANSIENT_CODES = {"1001", "1003", "1004"}
-_SEND_RETRIES = 5     # max SendRequest retries on transient errors
-_SEND_RETRY_WAIT = 8  # seconds to wait between SendRequest retries
+_SEND_TRANSIENT_CODES = {"1001", "1003", "1004"}
+_SEND_RETRIES = 10    # max SendRequest retries on transient errors
+_SEND_RETRY_WAIT = 10 # seconds to wait between SendRequest retries
+
+# Error codes IBKR can return during GetStatement polling that mean "still
+# generating" rather than a real failure.  Safe to keep polling on these.
+_GET_TRANSIENT_CODES = {"1010", "1011", "1012", "1003", "1004"}
 
 
 def download_flex_xml(token: str, query_id: str) -> str:
@@ -43,7 +47,7 @@ def download_flex_xml(token: str, query_id: str) -> str:
         msg = root.findtext("ErrorMessage", r.text)
         last_error = f"Flex SendRequest failed (code {code}): {msg}"
 
-        if code in _TRANSIENT_CODES and send_attempt < _SEND_RETRIES:
+        if code in _SEND_TRANSIENT_CODES and send_attempt < _SEND_RETRIES:
             time.sleep(_SEND_RETRY_WAIT)
             continue
 
@@ -66,9 +70,15 @@ def download_flex_xml(token: str, query_id: str) -> str:
         try:
             root2 = ET.fromstring(r2.text)
             s2 = root2.findtext("Status", "")
+            code2 = root2.findtext("ErrorCode", "")
+            # IBKR may issue a new reference code on each status check
+            ref_code = root2.findtext("ReferenceCode") or ref_code
             if s2 in ("Success", "In Progress"):
-                # IBKR may issue a new reference code on each status check
-                ref_code = root2.findtext("ReferenceCode") or ref_code
+                continue
+            # Some IBKR versions return a non-Success status with a transient
+            # error code (e.g. 1012 "Statement generation in progress") rather
+            # than Status="In Progress". Keep polling on these too.
+            if code2 in _GET_TRANSIENT_CODES:
                 continue
             raise RuntimeError(f"Flex GetStatement failed: {root2.findtext('ErrorMessage', r2.text)}")
         except ET.ParseError:

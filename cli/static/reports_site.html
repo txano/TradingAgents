@@ -55,7 +55,7 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:1
 .sidebar-footer strong{color:var(--dim);display:block;margin-bottom:2px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.08em}
 
 /* ── Main ──────────────────────────────────────────────────── */
-#main{margin-left:var(--sidebar-w);flex:1;min-height:100vh}
+#main{margin-left:var(--sidebar-w);flex:1;min-height:100vh;min-width:0}
 .view{display:none;padding:38px 46px}
 .view.active{display:block}
 
@@ -284,9 +284,90 @@ select option{background:var(--surface)}
 @media(max-width:1400px){.dp-6col{grid-template-columns:repeat(3,1fr)}.dp-5col{grid-template-columns:repeat(3,1fr)}.dp-2fr1{grid-template-columns:1fr}}
 @media(max-width:1000px){.dp-4col{grid-template-columns:repeat(2,1fr)}.dp-2col{grid-template-columns:1fr}}
 @media(max-width:768px){.dp-6col{grid-template-columns:repeat(2,1fr)}.dp-5col{grid-template-columns:repeat(2,1fr)}}
+
+/* ── Calendar sub-tab ──────────────────────────────────────── */
+.run-tabs{display:flex;gap:0;border-bottom:1px solid var(--border);margin-bottom:24px}
+.run-tab{padding:9px 22px;cursor:pointer;font-size:12.5px;font-weight:600;color:var(--dim);border-bottom:2px solid transparent;transition:color .14s,border-color .14s;margin-bottom:-1px;user-select:none}
+.run-tab.active{color:var(--accent);border-bottom-color:var(--accent)}
+.run-tab:hover:not(.active){color:var(--text)}
+.cal-fetch-bar{display:flex;gap:12px;align-items:flex-end;margin-bottom:20px;background:var(--card);border:1px solid var(--border);border-radius:var(--r);padding:16px 20px;flex-wrap:wrap}
+.cal-day{background:var(--card);border:1px solid var(--border);border-radius:var(--r);margin-bottom:14px;overflow:hidden}
+.cal-day-hd{display:flex;align-items:center;gap:14px;padding:14px 18px;background:rgba(0,0,0,0.12);border-bottom:1px solid var(--border)}
+.cal-day-title{font-size:15px;font-weight:700;letter-spacing:-.3px;font-family:var(--mono)}
+.cal-day-sub{font-size:11px;color:var(--dim);margin-top:3px}
+.cal-add-row{display:flex;gap:8px;padding:12px 18px;border-top:1px solid var(--border);background:rgba(0,0,0,0.06);align-items:center;flex-wrap:wrap}
+.cal-add-row input{flex:1;max-width:360px;background:var(--surface);border:1px solid var(--border2);border-radius:6px;color:var(--text);padding:6px 10px;font-size:12.5px;outline:none;font-family:var(--font);transition:border-color .14s}
+.cal-add-row input:focus{border-color:var(--accent)}
+.cal-remove-btn{background:none;border:none;color:var(--muted);cursor:pointer;font-size:11px;padding:2px 6px;border-radius:3px;transition:color .13s;line-height:1}
+.cal-remove-btn:hover{color:var(--loss)}
+.cal-screen-btn{background:var(--accent);color:#fff;border:none;border-radius:var(--r-xs);padding:7px 16px;font-size:12px;font-weight:700;cursor:pointer;transition:background .14s;flex-shrink:0}
+.cal-screen-btn:hover{background:var(--accent-dim)}
+
+/* ── Screen modal ──────────────────────────────────────────── */
+#scr-modal{position:fixed;inset:0;background:rgba(0,0,0,0.72);z-index:300;display:none;justify-content:center;align-items:center;backdrop-filter:blur(5px)}
+#scr-mc{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);width:min(660px,92vw);max-height:88vh;overflow-y:auto;display:flex;flex-direction:column;box-shadow:0 24px 72px rgba(0,0,0,0.5);animation:slideIn .2s ease}
+#scr-mh{display:flex;align-items:center;justify-content:space-between;padding:16px 22px;border-bottom:1px solid var(--border);flex-shrink:0;background:rgba(0,0,0,0.1)}
+#scr-mt{font-size:14px;font-weight:700;letter-spacing:-.2px;flex:1}
+#scr-mb{padding:22px 24px;flex:1}
+.scr-close{width:28px;height:28px;border-radius:6px;background:rgba(255,255,255,0.05);border:1px solid var(--border);cursor:pointer;color:var(--dim);display:flex;align-items:center;justify-content:center;font-size:14px;transition:all .14s;flex-shrink:0}
+.scr-close:hover{color:var(--text);background:rgba(255,255,255,0.08);border-color:var(--border2)}
+
+/* ── Activity banner ───────────────────────────────────────── */
+#run-banner{position:fixed;top:0;left:var(--sidebar-w);right:0;z-index:50;padding:7px 18px;display:flex;align-items:center;gap:9px;font-size:12px;font-weight:600;background:rgba(251,191,36,0.13);border-bottom:1px solid var(--warn-border);color:var(--warn);backdrop-filter:blur(8px);transform:translateY(-100%);transition:transform .22s ease;pointer-events:none}
+#run-banner.visible{transform:translateY(0);pointer-events:auto}
+.bnr-dot{width:7px;height:7px;border-radius:50%;background:var(--warn);flex-shrink:0;animation:bnrpulse 1.3s infinite}
+@keyframes bnrpulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.4;transform:scale(.8)}}
+.bnr-close{margin-left:auto;background:none;border:none;color:var(--warn);cursor:pointer;font-size:14px;opacity:.65;line-height:1;padding:2px 5px;border-radius:3px;flex-shrink:0}
+.bnr-close:hover{opacity:1}
+
+/* ── Mobile sidebar ────────────────────────────────────────── */
+#mob-toggle{display:none;position:fixed;top:11px;left:12px;z-index:100;background:var(--card);border:1px solid var(--border2);border-radius:7px;width:36px;height:36px;align-items:center;justify-content:center;cursor:pointer;font-size:17px;color:var(--text);box-shadow:0 2px 8px rgba(0,0,0,0.3)}
+#mob-bg{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.52);z-index:9;backdrop-filter:blur(2px)}
+
+@media(max-width:700px){
+  html,body{overflow-x:hidden}
+  :root{--sidebar-w:0px}
+  #sidebar{transform:translateX(-100%);transition:transform .22s ease;z-index:15;width:230px}
+  #sidebar.mob-open{transform:translateX(0)}
+  #mob-bg{display:block;opacity:0;pointer-events:none;transition:opacity .22s}
+  #mob-bg.mob-open{opacity:1;pointer-events:auto}
+  #mob-toggle{display:flex}
+  #main{margin-left:0;min-width:0}
+  canvas{max-width:100%}
+  #run-banner{left:0}
+  .view{padding:54px 14px 28px 60px}
+  .stat-grid{grid-template-columns:repeat(2,1fr)}
+  .run-grid{grid-template-columns:1fr}
+  .run-card.full{grid-column:1}
+  .form-row,.form-row-3{grid-template-columns:1fr}
+  .sc-hd{flex-wrap:wrap;gap:8px}
+  .sc-actions{width:100%;justify-content:flex-end}
+  .ph h2{font-size:18px}
+  .ph{margin-bottom:20px;padding-bottom:16px}
+  .tw,.sc-table-wrap{overflow-x:auto}
+  .cal-fetch-bar{flex-direction:column;gap:8px;align-items:stretch}
+  .cal-fetch-bar .dp-fg{width:100%}
+  .cal-fetch-bar .dp-fg input{width:100%}
+  .filters{gap:5px}
+  .fi{font-size:13px}
+  .dp-filter-bar{flex-direction:column;gap:8px}
+  .dp-2fr1,.dp-2col{grid-template-columns:1fr}
+  .lc{gap:9px}
+  .lc-meta{flex-direction:row;align-items:center;gap:6px}
+  #scr-mc{width:96vw;max-height:92vh}
+  #op{width:100vw}
+}
 </style>
 </head>
 <body>
+
+<button id="mob-toggle" onclick="mobToggle()" aria-label="Menu">☰</button>
+<div id="mob-bg" onclick="mobClose()"></div>
+<div id="run-banner">
+  <span class="bnr-dot"></span>
+  <span id="bnr-text">Running…</span>
+  <button class="bnr-close" onclick="hideBanner()" aria-label="Dismiss">✕</button>
+</div>
 
 <nav id="sidebar">
   <div class="logo">
@@ -326,6 +407,17 @@ select option{background:var(--surface)}
       <button id="oc" onclick="closeDetail()" aria-label="Close">✕</button>
     </div>
     <div id="ob"></div>
+  </div>
+</div>
+
+<!-- Screen modal -->
+<div id="scr-modal">
+  <div id="scr-mc">
+    <div id="scr-mh">
+      <div id="scr-mt"></div>
+      <button class="scr-close" onclick="closeScreenModal()">✕</button>
+    </div>
+    <div id="scr-mb"></div>
   </div>
 </div>
 
@@ -392,7 +484,7 @@ function parseMarkdownTable(mdText){
 
   const sigIdx=headers.findIndex(h=>/^signal$/i.test(h));
   const confIdx=headers.findIndex(h=>/^conf/i.test(h));
-  const scoreIdxs=new Set(headers.map((h,i)=>/beat|guidance|setup|total/i.test(h)?i:-1).filter(i=>i>=0));
+  const scoreIdxs=new Set(headers.map((h,i)=>/beat|guidance|setup|total|fund/i.test(h)?i:-1).filter(i=>i>=0));
   const olIdx=headers.findIndex(h=>/one.liner|one_liner/i.test(h));
   const numIdx=headers.findIndex(h=>/^#$/.test(h));
 
@@ -440,6 +532,7 @@ function go(v){
   document.querySelectorAll('.nav-item').forEach(e=>e.classList.remove('active'));
   $('v-'+v).classList.add('active');$('ni-'+v).classList.add('active');
   view=v;render(v);window.scrollTo(0,0);
+  mobClose();
 }
 
 // ── Overlay ──────────────────────────────────────────────────────────────────
@@ -528,25 +621,303 @@ function renderOverview(){
 }
 
 // ── Screenings ──────────────────────────────────────────────────────────────
+function buildScreeningIndex() {
+  const idx = {};
+  (DATA.screening_runs||[]).forEach(run => {
+    (run.tickers||[]).forEach(t => {
+      if(!idx[t.ticker]) idx[t.ticker]=[];
+      idx[t.ticker].push({run, data:t});
+    });
+  });
+  Object.keys(idx).forEach(tk => idx[tk].sort((a,b) => b.run.date.localeCompare(a.run.date)));
+  return idx;
+}
+
+function nextWeekdayStr(base, offset) {
+  let d = new Date(base+'T00:00:00');
+  while(d.getDay()===0||d.getDay()===6) d.setDate(d.getDate()+1);
+  for(let i=0;i<offset;i++){d.setDate(d.getDate()+1);while(d.getDay()===0||d.getDay()===6)d.setDate(d.getDate()+1);}
+  return d.toISOString().slice(0,10);
+}
+
+function renderCalDayCard(d, day, scrIdx) {
+  const entries = day.entries||[];
+  const fetchedAt = day.fetched_at?new Date(day.fetched_at).toLocaleString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}):'—';
+  const screenedCount = entries.filter(e=>(scrIdx[e.ticker]||[]).length>0).length;
+  const sc = n => n!=null?`<span class="${n>0?'c-win':n<0?'c-loss':'c-dim'}" style="font-weight:700;font-family:var(--mono)">${n>=0?'+':''}${n}</span>`:'<span style="color:var(--muted)">—</span>';
+
+  const depthLabel = d => { const n=parseInt(d)||0; return n<=1?'Shallow':n<=3?'Medium':'Deep'; };
+  const rows = entries.map(e=>{
+    const scrs = (scrIdx[e.ticker]||[]).filter(s => !s.run.earnings_date || s.run.earnings_date === d);
+    const latest = scrs[0];
+    const sessColor = e.session==='AH'?'var(--accent)':e.session==='PM'?'var(--info)':'var(--dim)';
+    let sigHtml='<span style="color:var(--muted)">—</span>';
+    let beatH=sc(null),guidH=sc(null),setupH=sc(null),totH=sc(null),fundH='<span style="color:var(--muted)">—</span>',confH='<span style="color:var(--muted)">—</span>',histH='';
+    if(latest){
+      const td=latest.data, sig=td.signal||'—';
+      const sbc=sig==='BUY'?'b-buy':sig==='SHORT'?'b-short':'b-skip';
+      sigHtml=`<span class="badge ${sbc}" style="cursor:pointer" onclick="openTickerDetail('${latest.run.id}','${esc(e.ticker)}')">${esc(sig)}</span>`;
+      beatH=sc(td.beat_score);guidH=sc(td.guidance_score);setupH=sc(td.setup_score);totH=sc(td.total_score);
+      fundH=td.fundamentals_score!=null?sc(td.fundamentals_score):'<span style="color:var(--muted)">—</span>';
+      const cc=td.confidence||'—';
+      confH=`<span class="badge ${cc==='High'?'b-high':cc==='Medium'?'b-medium':'b-low'}">${esc(cc)}</span>`;
+      if(scrs.length>1) histH=`<button class="cal-remove-btn" style="color:var(--accent);font-weight:700;font-size:11px;padding:1px 5px" onclick="openTickerHistory('${esc(e.ticker)}',event)" title="${scrs.length} screenings">×${scrs.length}</button>`;
+    }
+    const tkHtml=latest
+      ?`<strong class="tm" style="cursor:pointer;color:var(--accent)" onclick="openTickerDetail('${latest.run.id}','${esc(e.ticker)}')">${esc(e.ticker)}</strong>`
+      :`<strong class="tm">${esc(e.ticker)}</strong>`;
+    const oneLineTd = latest
+      ?`<td style="color:var(--dim);font-size:11px;max-width:220px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${esc(latest.data.one_liner||'')}">${esc(latest.data.one_liner||'')}</td>`
+      :`<td></td>`;
+    const depthTd = latest?.run?.depth
+      ?`<td style="font-size:11px;color:var(--dim)">${depthLabel(latest.run.depth)}</td>`
+      :`<td></td>`;
+    const allocTd = latest?.data?.allocation_amount
+      ?`<td class="num" style="color:var(--win)">$${Math.round(latest.data.allocation_amount/1000)}k</td>`
+      :`<td></td>`;
+    return `<tr>
+      <td style="text-align:center;width:30px"><input type="checkbox" data-calscr="${d}" value="${esc(e.ticker)}" checked style="accent-color:var(--accent)"></td>
+      <td>${tkHtml}</td>
+      <td style="color:var(--dim);font-size:11.5px;max-width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(e.company||'')}</td>
+      <td><span style="color:${sessColor};font-size:10px;font-weight:700;text-transform:uppercase">${esc(e.session)}</span></td>
+      <td style="color:var(--dim);font-family:var(--mono);font-size:11.5px">${fmtMCap(e.market_cap)}</td>
+      <td style="text-align:center">${sigHtml}</td>
+      <td class="num">${beatH}</td><td class="num">${guidH}</td><td class="num">${setupH}</td><td class="num" title="Fundamentals quality score">${fundH}</td><td class="num">${totH}</td>
+      <td>${confH}</td>
+      ${depthTd}${allocTd}
+      ${oneLineTd}
+      <td style="text-align:center">${histH}</td>
+      <td style="text-align:center"><button class="cal-remove-btn" onclick="csRemoveTicker('${d}','${esc(e.ticker)}')" title="Remove">✕</button></td>
+    </tr>`;
+  }).join('');
+
+  const tableHtml = entries.length
+    ?`<div style="overflow-x:auto"><table class="dt"><thead><tr>
+        <th style="width:30px;text-align:center"><input type="checkbox" checked onclick="calScrSelectAll('${d}',this.checked)" style="accent-color:var(--accent)"></th>
+        <th>Ticker</th><th>Company</th><th>Session</th><th>Mkt Cap</th>
+        <th style="text-align:center">Signal</th><th class="tr">Beat</th><th class="tr">Guid</th><th class="tr">Setup</th><th class="tr" title="Fundamentals quality score (-5 to +5)">Funds</th><th class="tr">Total</th>
+        <th>Conf</th><th>Depth</th><th class="tr">Alloc</th><th style="max-width:200px">One-liner</th>
+        <th style="text-align:center" title="Past screenings">Hist</th><th></th>
+      </tr></thead><tbody>${rows}</tbody></table></div>`
+    :`<div style="padding:14px 18px;color:var(--muted);font-size:12px">No entries yet. Re-fetch from NASDAQ or add tickers below.</div>`;
+
+  return `<div class="cal-day">
+    <div class="cal-day-hd" onclick="toggleCalDay('${d}')" style="cursor:pointer">
+      <span class="chevron" id="cal-ch-${d}" style="color:var(--muted)">▶</span>
+      <div style="flex:1">
+        <div class="cal-day-title">${fmtCalDay(d)}</div>
+        <div class="cal-day-sub">${entries.length} companies · ${screenedCount} screened · fetched ${fetchedAt}</div>
+      </div>
+      <button class="cal-screen-btn" onclick="event.stopPropagation();calScreenDay('${d}')">Screen Selected ▶</button>
+    </div>
+    <div id="cal-bd-${d}" style="display:none">
+      ${tableHtml}
+      <div class="cal-add-row">
+        <input type="text" id="csa-${d}" placeholder="Add tickers: AAPL, MSFT, …">
+        <button class="ab" onclick="csAddTickers('${d}','csa-${d}')">Add</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+async function calLoadForScreenings() {
+  const el=$('cal-scr-days'); if(!el) return;
+  const scrIdx=buildScreeningIndex();
+  try {
+    const res=await fetch('/api/calendar'); if(!res.ok) throw new Error(await res.text());
+    const cal=await res.json();
+    const days=Object.keys(cal).sort().reverse();
+    el.innerHTML=days.length
+      ?days.map(d=>renderCalDayCard(d,cal[d],scrIdx)).join('')
+      :'<div style="padding:18px 0;color:var(--muted);font-size:12px">No calendar data yet. Select a date range above and click "Fetch from NASDAQ".</div>';
+  } catch(e) { if(el) el.innerHTML=`<div style="padding:12px;color:var(--muted)">Error: ${esc(e.message)}</div>`; }
+}
+
+async function calFetchRange() {
+  const from=$('cal-from')?.value, to=$('cal-to')?.value;
+  if(!from||!to){alert('Please select a date range.');return;}
+  const btn=$('cal-range-btn'); if(btn){btn.disabled=true;btn.textContent='Fetching…';}
+  try {
+    const res=await fetch('/api/calendar/fetch-range',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({start:from,end:to})});
+    if(!res.ok) throw new Error(await res.text());
+    renderScreenings();
+  } catch(e) {
+    alert('Error: '+e.message);
+    const b=$('cal-range-btn'); if(b){b.disabled=false;b.textContent='Fetch from NASDAQ';}
+  }
+}
+
+function toggleCalDay(d){
+  const body=document.getElementById('cal-bd-'+d), chev=document.getElementById('cal-ch-'+d);
+  if(!body) return;
+  const open=body.style.display!=='none';
+  body.style.display=open?'none':'';
+  if(chev){chev.style.transform=open?'':'rotate(90deg)';chev.style.color=open?'var(--muted)':'var(--accent)';}
+}
+
+function calScrSelectAll(date,checked){document.querySelectorAll(`input[data-calscr="${date}"]`).forEach(cb=>cb.checked=checked);}
+
+function calScreenDay(date){
+  const checked=Array.from(document.querySelectorAll(`input[data-calscr="${date}"]:checked`)).map(cb=>cb.value);
+  if(!checked.length){alert('No tickers selected.');return;}
+  openScreenModal(checked,date);
+}
+
+async function csAddTickers(date,inputId){
+  const inp=document.getElementById(inputId); if(!inp||!inp.value.trim()) return;
+  const val=inp.value;
+  try {
+    const res=await fetch('/api/calendar/add',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({date,tickers:val})});
+    if(!res.ok) throw new Error(await res.text());
+    renderScreenings();
+  } catch(e){alert('Error: '+e.message);}
+}
+
+async function csRemoveTicker(date,ticker){
+  try {
+    const res=await fetch(`/api/calendar/${date}/${encodeURIComponent(ticker)}`,{method:'DELETE'});
+    if(!res.ok) throw new Error(await res.text());
+    renderScreenings();
+  } catch(e){alert('Error: '+e.message);}
+}
+
+function openTickerHistory(ticker,ev){
+  if(ev) ev.stopPropagation();
+  const scrs=buildScreeningIndex()[ticker]||[];
+  if(!scrs.length) return;
+  let body='<div style="padding:0 22px">';
+  scrs.forEach(({run,data})=>{
+    const sig=data.signal||'—', bc=sig==='BUY'?'b-buy':sig==='SHORT'?'b-short':'b-skip';
+    const tot=data.total_score||0;
+    body+=`<div style="display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--border)">
+      <div style="flex:1">
+        <div style="font-size:12.5px;font-weight:600">${esc(run.date)}</div>
+        <div style="font-size:11px;color:var(--dim)">Run: ${esc(run.id)} · Total: <span class="${tot>=0?'c-win':'c-loss'}" style="font-weight:700">${tot>=0?'+':''}${tot}</span></div>
+      </div>
+      <span class="badge ${bc}">${esc(sig)}</span>
+      <button class="ab" onclick="closeDetail();openTickerDetail('${run.id}','${esc(ticker)}')">View →</button>
+    </div>`;
+  });
+  body+='</div>';
+  openDetail(`${esc(ticker)} — Screening History (${scrs.length})`,body);
+}
+
+// ── Screen modal ──────────────────────────────────────────────────────────────
+let _smTickers=[],_smDate='',_smWs=null;
+
+function openScreenModal(tickers,date){
+  _smTickers=tickers; _smDate=date;
+  $('scr-modal').style.display='flex';
+  document.body.style.overflow='hidden';
+  _renderSMForm();
+}
+function closeScreenModal(){
+  $('scr-modal').style.display='none';
+  document.body.style.overflow='';
+  if(_smWs){try{_smWs.close();}catch(e){} _smWs=null;}
+}
+function _renderSMForm(){
+  const pOpts=(s='deepseek')=>PROVIDERS.map(p=>`<option value="${p}"${p===s?' selected':''}>${p}</option>`).join('');
+  const mOpts=(prov='deepseek',sel='')=>(MODELS[prov]||[]).map(m=>`<option value="${m}"${m===sel?' selected':''}>${m}</option>`).join('');
+  $('scr-mt').textContent=`Screen ${_smTickers.length} ticker${_smTickers.length!==1?'s':''} — ${_smDate}`;
+  $('scr-mb').innerHTML=`
+    <div style="margin-bottom:16px;display:flex;flex-wrap:wrap;gap:4px">${_smTickers.map(t=>`<span class="chip">${esc(t)}</span>`).join('')}</div>
+    <div class="form-row">
+      <div><label>Date</label><input type="date" id="sm-date" value="${_smDate}" style="color-scheme:dark"></div>
+      <div><label>Budget ($)</label><input type="number" id="sm-budget" value="100000" min="1000"></div>
+    </div>
+    <div class="form-row">
+      <div><label>Depth</label><select id="sm-depth"><option value="1">Shallow (1 round)</option><option value="3" selected>Medium (3 rounds)</option><option value="5">Deep (5 rounds)</option></select></div>
+      <div><label>Workers</label><input type="number" id="sm-workers" value="1" min="1" max="8"></div>
+    </div>
+    <div class="form-row"><div><label>Provider</label><select id="sm-prov" onchange="smUpdateModels()">${pOpts()}</select></div></div>
+    <div class="form-row">
+      <div><label>Quick model</label><select id="sm-qm">${mOpts('deepseek','deepseek-chat')}</select></div>
+      <div><label>Deep model</label><select id="sm-dm">${mOpts('deepseek','deepseek-reasoner')}</select></div>
+    </div>
+    <div class="form-field"><label>Analysts</label><div class="checkrow">
+      ${['market','social','news','fundamentals'].map(a=>`<label><input type="checkbox" value="${a}" checked> ${a}</label>`).join('')}
+    </div></div>
+    <div style="margin-top:20px;display:flex;gap:10px;align-items:center">
+      <button class="btn-run" id="sm-submit" onclick="runScreenModal()">▶ Run Screen</button>
+      <button class="dp-btn" onclick="closeScreenModal()">Cancel</button>
+    </div>`;
+}
+function smUpdateModels(){
+  const prov=document.getElementById('sm-prov')?.value||'deepseek';
+  ['sm-qm','sm-dm'].forEach(id=>{const s=document.getElementById(id);if(!s)return;s.innerHTML=(MODELS[prov]||[]).map(m=>`<option value="${m}">${m}</option>`).join('');});
+}
+async function runScreenModal(){
+  const g=id=>document.getElementById(id)?.value||'';
+  const analysts=Array.from(document.querySelectorAll('#scr-mb .checkrow input:checked')).map(b=>b.value);
+  const date=g('sm-date');
+  const params={tickers:_smTickers.join(','),date,earnings_date:_smDate,depth:g('sm-depth'),workers:g('sm-workers'),budget:g('sm-budget'),provider:g('sm-prov'),quick_model:g('sm-qm'),deep_model:g('sm-dm'),analysts};
+  $('scr-mt').textContent=`Screening ${_smTickers.length} ticker${_smTickers.length!==1?'s':''} — ${date}`;
+  $('scr-mb').innerHTML=`
+    <div style="margin-bottom:12px;display:flex;flex-wrap:wrap;gap:4px;align-items:center">
+      ${_smTickers.map(t=>`<span class="chip">${esc(t)}</span>`).join('')}
+      <span id="sm-status" class="job-status running" style="margin-left:8px">⟳ running</span>
+    </div>
+    <div class="job-log active" id="sm-log" style="min-height:200px;max-height:360px"></div>
+    <div id="sm-done-row" style="display:none;margin-top:14px;gap:10px;align-items:center"></div>`;
+  let jobId;
+  try {
+    const res=await fetch('/api/jobs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({type:'screen',params})});
+    if(!res.ok) throw new Error(await res.text());
+    ({job_id:jobId}=await res.json());
+  } catch(e){
+    const l=$('sm-log');if(l)l.textContent='Error: '+e.message;
+    const st=$('sm-status');if(st){st.className='job-status error';st.textContent='✕ error';}
+    return;
+  }
+  _bnrShow('screen');
+  const proto=location.protocol==='https:'?'wss:':'ws:';
+  const ws=new WebSocket(`${proto}//${location.host}/ws/${jobId}`);
+  _smWs=ws;
+  ws.onmessage=e=>{
+    if(e.data==='__DONE__'){
+      _bnrHide('screen');
+      const st=$('sm-status');if(st){st.className='job-status done';st.textContent='✓ done';}
+      const dr=$('sm-done-row');if(dr){dr.style.display='flex';dr.innerHTML=`<button class="btn-run" onclick="location.reload()">Reload to see results</button><button class="dp-btn" onclick="closeScreenModal()" style="margin-left:6px">Close</button>`;}
+      return;
+    }
+    if(e.data==='__ERROR__'){_bnrHide('screen');const st=$('sm-status');if(st){st.className='job-status error';st.textContent='✕ error';}return;}
+    const l=$('sm-log');if(l){l.textContent+=e.data+'\n';l.scrollTop=l.scrollHeight;}
+  };
+  ws.onerror=()=>{_bnrHide('screen');const st=$('sm-status');if(st){st.className='job-status error';st.textContent='✕ ws error';}};
+}
+
 function renderScreenings(){
+  const today=new Date().toISOString().slice(0,10);
+  const calFrom=nextWeekdayStr(today,0), calTo=nextWeekdayStr(calFrom,4);
   const runs=DATA.screening_runs||[];
   const sa=DATA.standalone_analyses||[];
-  let h=`<div class="ph"><h2>Screening Runs</h2><p>${runs.length} run${runs.length!==1?'s':''} · expand a run to see the full table, click a ticker to read its earnings brief and PM decision</p></div>`;
 
-  if(!runs.length){h+=`<div class="empty"><span class="ei">⊞</span>No screenings yet. Run <code style="font-family:var(--mono)">tradingagents screen</code> to get started.</div>`}
+  let h=`<div class="ph"><h2>Screenings</h2><p>${runs.length} run${runs.length!==1?'s':''} · fetch the earnings calendar below, select tickers to screen, or expand past runs to review results</p></div>
+
+<div class="section">
+  <div class="sec-hd" style="margin-bottom:10px"><div class="sec-title">NASDAQ Earnings Calendar</div></div>
+  <div class="cal-fetch-bar" style="margin-bottom:14px">
+    <div class="dp-fg"><label>From</label><input type="date" id="cal-from" value="${calFrom}" style="width:138px;color-scheme:dark"></div>
+    <div class="dp-fg"><label>To</label><input type="date" id="cal-to" value="${calTo}" style="width:138px;color-scheme:dark"></div>
+    <button class="btn-run" id="cal-range-btn" onclick="calFetchRange()">Fetch from NASDAQ</button>
+    <span style="font-size:11.5px;color:var(--dim);align-self:center">AH of each day + PM of next trading day</span>
+  </div>
+  <div id="cal-scr-days"><div style="color:var(--muted);font-size:12px">Loading calendar…</div></div>
+</div>
+
+<hr class="divider">
+`;
+
+  if(!runs.length){h+=`<div class="empty"><span class="ei">⊞</span>No screening runs yet. Pick tickers from the calendar above and click "Screen Selected ▶".</div>`;}
   else runs.forEach(r=>{
     const buys=(r.tickers||[]).filter(t=>t.signal==='BUY');
     const shorts=(r.tickers||[]).filter(t=>t.signal==='SHORT');
     const skips=(r.tickers||[]).filter(t=>t.signal==='SKIP');
     const calBadge=r.calibration&&r.calibration.signal_accuracy_pct!=null
       ?`<span class="badge b-medium" style="margin-left:6px">cal ${Math.round(r.calibration.signal_accuracy_pct)}%</span>`:'';
-
-    // Inline screening table
     const tableHtml=parseMarkdownTable(r.screening_table_md||'');
-
-    // Ticker chips for briefs
     const chipsHtml=(r.tickers||[]).map(t=>`<span class="chip ${(t.signal||'skip').toLowerCase()}" onclick="openTickerDetail('${r.id}','${t.ticker}')" title="${esc(t.signal)} · ${esc(t.confidence)}">${esc(t.ticker)}</span>`).join('');
-
     h+=`<div class="sc" id="sc-${r.id}">
       <div class="sc-hd" onclick="toggleSc('${r.id}')">
         <div class="sc-date">${r.date}</div>
@@ -583,6 +954,7 @@ function renderScreenings(){
     });
   }
   $('v-screenings').innerHTML=h;
+  calLoadForScreenings();
 }
 
 function toggleSc(id){
@@ -605,17 +977,22 @@ function openTickerDetail(runId,ticker){
 
   // Score bars
   if(t.beat_score!=null||t.guidance_score!=null||t.setup_score!=null){
+    const fundBar=t.fundamentals_score!=null?scoreWidget('Fundamentals',t.fundamentals_score,5):'';
+    const fundMeta=t.fundamentals_score!=null?`<div style="font-size:10.5px;color:var(--muted);margin-top:3px">${[t.bs_quality,t.margin_trend,t.growth_quality].filter(Boolean).join(' · ')}</div>`:'';
     body+=`<div class="score-wrap">
       ${scoreWidget('Beat',t.beat_score,5)}
       ${scoreWidget('Guidance',t.guidance_score,5)}
       ${scoreWidget('Setup',t.setup_score,5)}
+      ${fundBar}
       ${scoreWidget('Total',t.total_score,15)}
       <div class="score-signals">
         <span class="badge ${badgeClass(t.signal)}">${esc(t.signal||'—')}</span>
         <span class="badge ${badgeClass(t.confidence)}">${esc(t.confidence||'—')}</span>
+        ${fundMeta}
       </div>
     </div>`;
     if(t.one_liner){body+=`<blockquote style="margin:0;padding:11px 22px;border-left:3px solid var(--accent);color:var(--dim);background:var(--accent-bg);font-style:italic;font-size:12.5px;line-height:1.55;border-bottom:1px solid var(--border)">${esc(t.one_liner)}</blockquote>`}
+    if(t.fundamentals_summary){body+=`<div style="padding:7px 22px 10px;font-size:11px;color:var(--muted);border-bottom:1px solid var(--border)">Fundamentals: ${esc(t.fundamentals_summary)}</div>`}
   }
 
   // Portfolio Manager Decision
@@ -932,10 +1309,6 @@ function dashClearFilters(){
   dashRender();
 }
 
-function renderPerformance(){
-  go('overview');
-}
-
 // ── Run tab ───────────────────────────────────────────────────────────────────
 const PROVIDERS = ['deepseek','openai','anthropic','google','xai','openrouter','ollama'];
 const MODELS = {
@@ -952,106 +1325,76 @@ let _activeWs = null;
 
 function renderRun(){
   const today = new Date().toISOString().slice(0,10);
-  function provOpts(sel='deepseek'){
-    return PROVIDERS.map(p=>`<option value="${p}"${p===sel?' selected':''}>${p}</option>`).join('');
-  }
-  function mdOpts(prov='deepseek',sel=''){
-    const list = MODELS[prov]||[];
-    return list.map(m=>`<option value="${m}"${m===sel?' selected':''}>${m}</option>`).join('');
-  }
-  function analystsCheck(){
-    return ['market','social','news','fundamentals'].map(a=>
-      `<label><input type="checkbox" value="${a}" checked> ${a}</label>`
-    ).join('');
-  }
-  function depthSel(id){
-    return `<select id="${id}"><option value="1">Shallow (1 round)</option><option value="3">Medium (3 rounds)</option><option value="5">Deep (5 rounds)</option></select>`;
-  }
+  function provOpts(sel='deepseek'){return PROVIDERS.map(p=>`<option value="${p}"${p===sel?' selected':''}>${p}</option>`).join('');}
+  function mdOpts(prov='deepseek',sel=''){return(MODELS[prov]||[]).map(m=>`<option value="${m}"${m===sel?' selected':''}>${m}</option>`).join('');}
+  function analystsCheck(){return['market','social','news','fundamentals'].map(a=>`<label><input type="checkbox" value="${a}" checked> ${a}</label>`).join('');}
+  function depthSel(id,def='3'){return`<select id="${id}"><option value="1"${def==='1'?' selected':''}>Shallow (1 round)</option><option value="3"${def==='3'?' selected':''}>Medium (3 rounds)</option><option value="5"${def==='5'?' selected':''}>Deep (5 rounds)</option></select>`;}
 
-  const h = `
-<div class="ph"><h2>Run</h2><p>Launch analysis jobs directly from the browser.</p></div>
+  $('v-run').innerHTML = `
+<div class="ph"><h2>Run</h2><p>Launch individual analysis jobs. To screen earnings calendar picks, go to <span style="color:var(--accent);cursor:pointer" onclick="go('screenings')">Screenings</span>.</p></div>
 <div class="run-grid">
-
-  <!-- Screen -->
   <div class="run-card">
     <h3>▶ Screen</h3>
     <p>Batch analysis across multiple tickers with earnings scoring and allocation.</p>
     <div class="form-field"><label>Tickers (comma-separated)</label><input type="text" id="sc-tickers" placeholder="AAPL, MSFT, NVDA"></div>
-    <div class="form-row">
-      <div><label>Date</label><input type="date" id="sc-date" value="${today}"></div>
-      <div><label>Budget ($)</label><input type="number" id="sc-budget" value="100000" min="1000"></div>
-    </div>
-    <div class="form-row">
-      <div><label>Depth</label>${depthSel('sc-depth')}</div>
-      <div><label>Workers</label><input type="number" id="sc-workers" value="1" min="1" max="8"></div>
-    </div>
-    <div class="form-row">
-      <div><label>Provider</label><select id="sc-prov" onchange="updateModels('sc')">${provOpts()}</select></div>
-    </div>
-    <div class="form-row">
-      <div><label>Quick model</label><select id="sc-qm">${mdOpts('deepseek','deepseek-chat')}</select></div>
-      <div><label>Deep model</label><select id="sc-dm">${mdOpts('deepseek','deepseek-chat')}</select></div>
-    </div>
+    <div class="form-row"><div><label>Date</label><input type="date" id="sc-date" value="${today}"></div><div><label>Budget ($)</label><input type="number" id="sc-budget" value="100000" min="1000"></div></div>
+    <div class="form-row"><div><label>Depth</label>${depthSel('sc-depth')}</div><div><label>Workers</label><input type="number" id="sc-workers" value="1" min="1" max="8"></div></div>
+    <div class="form-row"><div><label>Provider</label><select id="sc-prov" onchange="updateModels('sc')">${provOpts()}</select></div></div>
+    <div class="form-row"><div><label>Quick model</label><select id="sc-qm">${mdOpts('deepseek','deepseek-chat')}</select></div><div><label>Deep model</label><select id="sc-dm">${mdOpts('deepseek','deepseek-reasoner')}</select></div></div>
     <div class="form-field"><label>Analysts</label><div class="checkrow" id="sc-analysts">${analystsCheck()}</div></div>
     <button class="btn-run" onclick="runJob('screen','sc')">Run Screen</button>
     <span id="sc-status" class="job-status" style="display:none"></span>
     <div class="job-log" id="sc-log"></div>
   </div>
-
-  <!-- Analyze -->
   <div class="run-card">
     <h3>▶ Analyze</h3>
     <p>Single-ticker deep-dive with full agent pipeline.</p>
-    <div class="form-row">
-      <div><label>Ticker</label><input type="text" id="an-ticker" placeholder="SPY" style="text-transform:uppercase"></div>
-      <div><label>Date</label><input type="date" id="an-date" value="${today}"></div>
-    </div>
-    <div class="form-row">
-      <div><label>Depth</label>${depthSel('an-depth')}</div>
-      <div><label>Provider</label><select id="an-prov" onchange="updateModels('an')">${provOpts()}</select></div>
-    </div>
-    <div class="form-row">
-      <div><label>Quick model</label><select id="an-qm">${mdOpts('deepseek','deepseek-chat')}</select></div>
-      <div><label>Deep model</label><select id="an-dm">${mdOpts('deepseek','deepseek-chat')}</select></div>
-    </div>
+    <div class="form-row"><div><label>Ticker</label><input type="text" id="an-ticker" placeholder="SPY" style="text-transform:uppercase"></div><div><label>Date</label><input type="date" id="an-date" value="${today}"></div></div>
+    <div class="form-row"><div><label>Depth</label>${depthSel('an-depth')}</div><div><label>Provider</label><select id="an-prov" onchange="updateModels('an')">${provOpts()}</select></div></div>
+    <div class="form-row"><div><label>Quick model</label><select id="an-qm">${mdOpts('deepseek','deepseek-chat')}</select></div><div><label>Deep model</label><select id="an-dm">${mdOpts('deepseek','deepseek-reasoner')}</select></div></div>
     <div class="form-field"><label>Analysts</label><div class="checkrow" id="an-analysts">${analystsCheck()}</div></div>
     <button class="btn-run" onclick="runJob('analyze','an')">Run Analysis</button>
     <span id="an-status" class="job-status" style="display:none"></span>
     <div class="job-log" id="an-log"></div>
   </div>
-
-  <!-- Calibrate -->
   <div class="run-card">
     <h3>▶ Calibrate</h3>
     <p>Compare screening predictions against actual earnings outcomes.</p>
-    <div class="form-field"><label>Screening run (leave blank for most recent uncalibrated)</label><input type="text" id="cal-run" placeholder="e.g. screening_2026-05-13_123456"></div>
-    <button class="btn-run" onclick="runJob('calibrate','cal')">Run Calibration</button>
-    <span id="cal-status" class="job-status" style="display:none"></span>
-    <div class="job-log" id="cal-log"></div>
+    <div class="form-field"><label>Screening run (leave blank for most recent uncalibrated)</label><input type="text" id="clb-run" placeholder="e.g. screening_2026-05-13_123456"></div>
+    <button class="btn-run" onclick="runJob('calibrate','clb')">Run Calibration</button>
+    <span id="clb-status" class="job-status" style="display:none"></span>
+    <div class="job-log" id="clb-log"></div>
   </div>
-
-  <!-- Reflect -->
   <div class="run-card">
     <h3>▶ Reflect</h3>
     <p>Post-mortem analysis on a closed trade from your trade history.</p>
-    <div class="form-row">
-      <div><label>Ticker</label><input type="text" id="rf-ticker" placeholder="AAPL"></div>
-      <div><label>Exit date</label><input type="date" id="rf-date"></div>
-    </div>
-    <div class="form-row">
-      <div><label>Provider</label><select id="rf-prov" onchange="updateModels('rf')">${provOpts()}</select></div>
-    </div>
-    <div class="form-row">
-      <div><label>Quick model</label><select id="rf-qm">${mdOpts('deepseek','deepseek-chat')}</select></div>
-      <div><label>Deep model</label><select id="rf-dm">${mdOpts('deepseek','deepseek-chat')}</select></div>
-    </div>
+    <div class="form-row"><div><label>Ticker</label><input type="text" id="rf-ticker" placeholder="AAPL"></div><div><label>Exit date</label><input type="date" id="rf-date"></div></div>
+    <div class="form-row"><div><label>Provider</label><select id="rf-prov" onchange="updateModels('rf')">${provOpts()}</select></div></div>
+    <div class="form-row"><div><label>Quick model</label><select id="rf-qm">${mdOpts('deepseek','deepseek-chat')}</select></div><div><label>Deep model</label><select id="rf-dm">${mdOpts('deepseek','deepseek-chat')}</select></div></div>
     <button class="btn-run" onclick="runJob('reflect','rf')">Run Reflection</button>
     <span id="rf-status" class="job-status" style="display:none"></span>
     <div class="job-log" id="rf-log"></div>
   </div>
-
+  <div class="run-card full">
+    <h3>▶ Improve</h3>
+    <p>Run an LLM analysis across all trade reflections to generate actionable improvements to the pipeline, prompts, and scoring weights.</p>
+    <div class="form-row"><div><label>Provider</label><select id="imp-prov" onchange="updateModels('imp')">${provOpts()}</select></div><div><label>Model</label><select id="imp-dm">${mdOpts('deepseek','deepseek-reasoner')}</select></div></div>
+    <button class="btn-run" onclick="runJob('improve','imp')">Run Improvement Analysis</button>
+    <span id="imp-status" class="job-status" style="display:none"></span>
+    <div class="job-log" id="imp-log"></div>
+  </div>
+  <div class="run-card">
+    <h3>▶ Allocate</h3>
+    <p>Re-run the AI Council allocation on an existing screening run — useful to adjust the budget or regenerate after score corrections.</p>
+    <div class="form-field"><label>Screening run</label><select id="alc-run" style="width:100%"><option value="">Loading…</option></select></div>
+    <div class="form-row"><div><label>Date</label><input type="date" id="alc-date" value="${today}" style="color-scheme:dark"></div><div><label>Budget ($)</label><input type="number" id="alc-budget" value="100000" min="1000"></div></div>
+    <div class="form-row"><div><label>Provider</label><select id="alc-prov" onchange="updateModels('alc')">${provOpts()}</select></div><div><label>Model</label><select id="alc-dm">${mdOpts('deepseek','deepseek-reasoner')}</select></div></div>
+    <button class="btn-run" onclick="runJob('allocate','alc')">Run Allocation</button>
+    <span id="alc-status" class="job-status" style="display:none"></span>
+    <div class="job-log" id="alc-log"></div>
+  </div>
 </div>`;
-  $('v-run').innerHTML = h;
+  loadScreeningRunsDropdown();
 }
 
 function updateModels(prefix){
@@ -1109,7 +1452,7 @@ async function runJob(type, prefix){
       analysts:    _getAnalysts('an'),
     };
   } else if(type === 'calibrate'){
-    params = { run_name: g('cal-run') };
+    params = { run_name: g('clb-run') };
   } else if(type === 'reflect'){
     params = {
       ticker:      g('rf-ticker').toUpperCase(),
@@ -1117,6 +1460,21 @@ async function runJob(type, prefix){
       provider:    g('rf-prov'),
       quick_model: g('rf-qm'),
       deep_model:  g('rf-dm'),
+    };
+  } else if(type === 'improve'){
+    params = {
+      provider:    g('imp-prov'),
+      deep_model:  g('imp-dm'),
+      quick_model: g('imp-dm'),
+    };
+  } else if(type === 'allocate'){
+    params = {
+      run_name:    g('alc-run'),
+      date:        g('alc-date'),
+      budget:      g('alc-budget'),
+      provider:    g('alc-prov'),
+      deep_model:  g('alc-dm'),
+      quick_model: g('alc-dm'),
     };
   }
 
@@ -1137,6 +1495,8 @@ async function runJob(type, prefix){
     return;
   }
 
+  _bnrShow(type);
+
   // Stream via WebSocket
   if(_activeWs) { try{_activeWs.close();}catch(e){} }
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -1145,12 +1505,14 @@ async function runJob(type, prefix){
 
   ws.onmessage = e => {
     if(e.data === '__DONE__'){
+      _bnrHide(type);
       statusEl.className = 'job-status done';
       statusEl.textContent = '✓ done';
       btn.disabled = false;
       return;
     }
     if(e.data === '__ERROR__'){
+      _bnrHide(type);
       statusEl.className = 'job-status error';
       statusEl.textContent = '✕ error';
       btn.disabled = false;
@@ -1160,10 +1522,326 @@ async function runJob(type, prefix){
     logEl.scrollTop = logEl.scrollHeight;
   };
   ws.onerror = () => {
+    _bnrHide(type);
     statusEl.className = 'job-status error';
     statusEl.textContent = '✕ ws error';
     btn.disabled = false;
   };
+}
+
+// ── Calendar ──────────────────────────────────────────────────────────────────
+let _runTab = 'jobs';
+
+function setRunTab(tab) {
+  _runTab = tab;
+  ['jobs','calendar'].forEach(t => {
+    const panel = document.getElementById('run-'+t+'-panel');
+    const tabEl = document.getElementById('run-tab-'+t);
+    if (panel) panel.style.display = t === tab ? '' : 'none';
+    if (tabEl) tabEl.classList.toggle('active', t === tab);
+  });
+  if (tab === 'calendar') loadCalendar();
+}
+
+function fmtMCap(n) {
+  if (!n) return '—';
+  if (n >= 1e12) return '$'+(n/1e12).toFixed(1)+'T';
+  if (n >= 1e9)  return '$'+(n/1e9).toFixed(1)+'B';
+  if (n >= 1e6)  return '$'+(n/1e6).toFixed(0)+'M';
+  return '$'+n.toLocaleString();
+}
+
+function fmtCalDay(s) {
+  if (!s) return '—';
+  try {
+    const d = new Date(s+'T00:00:00');
+    return d.toLocaleDateString('en-US', {weekday:'short', month:'short', day:'numeric', year:'numeric'});
+  } catch(e) { return s; }
+}
+
+function _renderCalendarDays(calData) {
+  const days = Object.keys(calData).sort().reverse();
+  if (!days.length) return '<div class="empty"><span class="ei">📅</span>No calendar days yet — pick a trading day above and click "Fetch from NASDAQ".</div>';
+  return days.map(d => {
+    const day = calData[d];
+    const entries = day.entries || [];
+    const fetchedAt = day.fetched_at ? new Date(day.fetched_at).toLocaleString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}) : '—';
+    const ahDate = day.ah_date || d;
+    const pmDate = day.pm_date || '';
+    const rows = entries.map(e => {
+      const cbId = 'cal-cb-'+d+'-'+e.ticker;
+      const sessColor = e.session==='AH'?'var(--accent)':e.session==='PM'?'var(--info)':'var(--dim)';
+      return `<tr>
+        <td style="width:32px;text-align:center"><input type="checkbox" id="${cbId}" data-calday="${d}" value="${esc(e.ticker)}" checked style="accent-color:var(--accent)"></td>
+        <td><strong class="tm">${esc(e.ticker)}</strong></td>
+        <td style="color:var(--dim);font-size:11.5px;max-width:240px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(e.company)}</td>
+        <td><span style="color:${sessColor};font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em">${esc(e.session)}</span></td>
+        <td style="color:var(--dim);font-size:11.5px">${esc(e.time)}</td>
+        <td style="color:var(--dim);font-family:var(--mono);font-size:11.5px">${fmtMCap(e.market_cap)}</td>
+        <td style="color:var(--dim);font-family:var(--mono);font-size:11.5px">${e.eps_estimate!=null?String(e.eps_estimate):'—'}</td>
+        <td style="text-align:center"><button class="cal-remove-btn" onclick="removeCalendarTicker('${d}','${esc(e.ticker)}')" title="Remove">✕</button></td>
+      </tr>`;
+    }).join('');
+    const tableHtml = entries.length
+      ? `<div style="overflow-x:auto"><table class="dt"><thead><tr>
+          <th style="width:32px;text-align:center"><input type="checkbox" checked onclick="calSelectAll('${d}',this.checked)" title="Select all" style="accent-color:var(--accent)"></th>
+          <th>Ticker</th><th>Company</th><th>Session</th><th>Time</th><th>Mkt Cap</th><th>EPS Est.</th><th></th>
+        </tr></thead><tbody>${rows}</tbody></table></div>`
+      : `<div style="padding:16px 18px;color:var(--muted);font-size:12px">No entries yet. Add tickers below or re-fetch from NASDAQ.</div>`;
+    return `<div class="cal-day">
+      <div class="cal-day-hd">
+        <div style="flex:1">
+          <div class="cal-day-title">${fmtCalDay(d)}</div>
+          <div class="cal-day-sub">AH: ${fmtCalDay(ahDate)} &nbsp;·&nbsp; PM: ${fmtCalDay(pmDate)} &nbsp;·&nbsp; ${entries.length} companies &nbsp;·&nbsp; fetched ${fetchedAt}</div>
+        </div>
+        <button class="cal-screen-btn" onclick="screenCalendarDay('${d}')">Screen Selected ▶</button>
+      </div>
+      ${tableHtml}
+      <div class="cal-add-row">
+        <input type="text" id="cal-add-${d}" placeholder="Add tickers: AAPL, MSFT, …">
+        <button class="ab" onclick="addCalendarTickers('${d}','cal-add-${d}')">Add</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function loadCalendar() {
+  const listEl = document.getElementById('cal-days-list');
+  if (!listEl) return;
+  try {
+    const res = await fetch('/api/calendar');
+    if (!res.ok) throw new Error(await res.text());
+    const calData = await res.json();
+    listEl.innerHTML = _renderCalendarDays(calData);
+  } catch(e) {
+    if (listEl) listEl.innerHTML = `<div class="empty">${esc('Error: '+e.message)}</div>`;
+  }
+}
+
+async function fetchCalendarDay(dateStr) {
+  if (!dateStr) { alert('Please pick a trading day first.'); return; }
+  const btn = document.getElementById('cal-fetch-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Fetching…'; }
+  try {
+    const res = await fetch('/api/calendar/fetch', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({date: dateStr}),
+    });
+    if (!res.ok) throw new Error(await res.text());
+    await loadCalendar();
+  } catch(e) {
+    alert('Error fetching calendar: ' + e.message);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Fetch from NASDAQ'; }
+  }
+}
+
+async function addCalendarTickers(date, inputId) {
+  const inp = document.getElementById(inputId);
+  if (!inp || !inp.value.trim()) return;
+  const val = inp.value;
+  try {
+    const res = await fetch('/api/calendar/add', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({date, tickers: val}),
+    });
+    if (!res.ok) throw new Error(await res.text());
+    inp.value = '';
+    await loadCalendar();
+  } catch(e) {
+    alert('Error adding tickers: ' + e.message);
+  }
+}
+
+async function removeCalendarTicker(date, ticker) {
+  try {
+    const res = await fetch(`/api/calendar/${date}/${encodeURIComponent(ticker)}`, {method:'DELETE'});
+    if (!res.ok) throw new Error(await res.text());
+    await loadCalendar();
+  } catch(e) {
+    alert('Error removing ticker: ' + e.message);
+  }
+}
+
+function calSelectAll(date, checked) {
+  document.querySelectorAll(`input[data-calday="${date}"]`).forEach(cb => { cb.checked = checked; });
+}
+
+function screenCalendarDay(date) {
+  const checked = Array.from(document.querySelectorAll(`input[data-calday="${date}"]:checked`)).map(cb => cb.value);
+  if (!checked.length) { alert('No tickers selected.'); return; }
+  setRunTab('jobs');
+  const tickerInput = document.getElementById('sc-tickers');
+  const dateInput   = document.getElementById('sc-date');
+  if (tickerInput) tickerInput.value = checked.join(', ');
+  if (dateInput)   dateInput.value   = date;
+  if (tickerInput) setTimeout(() => tickerInput.scrollIntoView({behavior:'smooth', block:'center'}), 80);
+}
+
+// ── Screening-run dropdown (for Allocate card) ────────────────────────────────
+async function loadScreeningRunsDropdown(){
+  const sel = document.getElementById('alc-run');
+  if(!sel) return;
+  try {
+    const runs = await fetch('/api/screening-runs').then(r=>r.json()).catch(()=>[]);
+    if(!runs.length){ sel.innerHTML='<option value="">No screening runs found</option>'; return; }
+    sel.innerHTML = runs.map(r=>`<option value="${esc(r.name)}">${esc(r.name)} (${r.tickers} tickers${r.has_allocation?' · allocated':''})</option>`).join('');
+  } catch(e){ sel.innerHTML='<option value="">Error loading runs</option>'; }
+}
+
+// ── Weights editor ─────────────────────────────────────────────────────────────
+async function loadWeights(){
+  try {
+    const w = await fetch('/api/weights').then(r=>r.json());
+    ['beat','guidance','setup','fundamentals'].forEach(k=>{
+      const el=document.getElementById('wt-'+k); if(el) el.value=w[k]??'';
+    });
+  } catch(e){}
+}
+async function saveWeights(){
+  const g=k=>parseFloat(document.getElementById('wt-'+k)?.value)||0;
+  const btn=document.getElementById('wt-save');
+  if(btn){btn.disabled=true;btn.textContent='Saving…';}
+  try {
+    await fetch('/api/weights',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({beat:g('beat'),guidance:g('guidance'),setup:g('setup'),fundamentals:g('fundamentals')})});
+    if(btn){btn.textContent='✓ Saved';setTimeout(()=>{btn.disabled=false;btn.textContent='Save Weights';},1800);}
+  } catch(e){
+    if(btn){btn.disabled=false;btn.textContent='Save Weights';}
+    alert('Error saving: '+e.message);
+  }
+}
+
+// ── Performance / Stats view ───────────────────────────────────────────────────
+async function renderPerformance(){
+  $('v-performance').innerHTML=`<div class="ph"><h2>Performance</h2><p>Loading stats…</p></div>`;
+  let stats={trades:{},calibration:{}}, weights={beat:0.7,guidance:1.0,setup:1.0,fundamentals:1.5};
+  try { stats   = await fetch('/api/stats').then(r=>r.json()); } catch(e){}
+  try { weights = await fetch('/api/weights').then(r=>r.json()); } catch(e){}
+
+  const t=stats.trades||{}, cal=stats.calibration||{};
+  const wr  = t.win_rate   !=null ? t.win_rate.toFixed(0)+'%'   : '—';
+  const pnl = t.total_pnl  !=null ? cur(t.total_pnl)            : '—';
+  const avg = t.avg_pnl    !=null ? cur(t.avg_pnl)              : '—';
+  const cnt = t.count      !=null ? String(t.count)             : '—';
+  const sa  = cal.signal_accuracy!=null ? cal.signal_accuracy.toFixed(0)+'%' : '—';
+  const ba  = t.beat_accuracy!=null ? t.beat_accuracy.toFixed(0)+'%' : '—';
+  const ga  = t.guidance_accuracy!=null ? t.guidance_accuracy.toFixed(0)+'%' : '—';
+
+  function statCard(label,value,sub='',col=''){
+    return`<div class="stat"><div class="stat-label">${label}</div><div class="stat-value${col?' '+col:''}">${value}</div>${sub?`<div class="stat-sub">${sub}</div>`:''}</div>`;
+  }
+
+  // By-direction rows
+  const dirRows = Object.entries(t.by_direction||{}).map(([dir,d])=>{
+    const dr = d.count?((d.wins/d.count)*100).toFixed(0)+'%':'—';
+    const cl = dir==='BUY'?'c-win':'c-loss';
+    return`<tr><td><span class="badge ${dir==='BUY'?'b-buy':'b-short'}">${dir}</span></td><td class="num">${d.count}</td><td class="num ${cl}">${dr}</td></tr>`;
+  }).join('');
+
+  // Confidence accuracy rows
+  const confRows = Object.entries(cal.by_confidence||{}).map(([c,d])=>
+    `<tr><td>${esc(c)}</td><td class="num">${d.n}</td><td class="num ${d.accuracy>=50?'c-win':'c-loss'}">${d.accuracy.toFixed(0)}%</td></tr>`
+  ).join('');
+
+  $('v-performance').innerHTML=`
+<div class="ph"><h2>Performance</h2><p>${t.count?t.count+' trades logged':'No trades yet'} · ${cal.screening_runs?cal.screening_runs+' screening runs calibrated':'no calibrations yet'}</p></div>
+
+<div class="stat-grid">
+  ${statCard('Win Rate', wr, t.count?(t.wins||0)+' W / '+(t.losses||0)+' L':''  , t.win_rate>=50?'c-win':t.win_rate!=null?'c-loss':'')}
+  ${statCard('Total P&L', pnl, t.count?'across '+t.count+' trades':'' , t.total_pnl>0?'c-win':t.total_pnl<0?'c-loss':'')}
+  ${statCard('Signal Accuracy', sa, cal.with_signal?(cal.with_signal||0)+' screened tickers':'')}
+  ${statCard('Avg P&L / Trade', avg, '', t.avg_pnl>0?'c-win':t.avg_pnl<0?'c-loss':'')}
+</div>
+
+<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-bottom:28px">
+  ${t.by_direction&&Object.keys(t.by_direction).length?`<div class="tw"><table class="dt"><thead><tr><th>Direction</th><th class="tr">Trades</th><th class="tr">Win %</th></tr></thead><tbody>${dirRows}</tbody></table></div>`:''}
+  <div class="tw"><table class="dt"><thead><tr><th>Metric</th><th class="tr">Accuracy</th></tr></thead><tbody>
+    <tr><td>Beat prediction</td><td class="num">${ba}</td></tr>
+    <tr><td>Guidance prediction</td><td class="num">${ga}</td></tr>
+  </tbody></table></div>
+  ${confRows?`<div class="tw"><table class="dt"><thead><tr><th>Confidence</th><th class="tr">Signals</th><th class="tr">Accuracy</th></tr></thead><tbody>${confRows}</tbody></table></div>`:''}
+</div>
+
+<div class="section">
+  <div class="sec-hd"><div class="sec-title">Allocation Weights</div></div>
+  <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--r);padding:20px 22px">
+    <p style="font-size:11.5px;color:var(--dim);margin-bottom:16px">
+      <code>weighted_score = beat_w × beat_score + guidance_w × guidance_score + setup_w × setup_score + fundamentals_w × fundamentals_score</code>
+    </p>
+    <div class="form-row-3" style="margin-bottom:16px">
+      <div><label>Fundamentals weight</label><input type="number" id="wt-fundamentals" value="${weights.fundamentals}" step="0.1" min="0"></div>
+      <div><label>Guidance weight</label><input type="number" id="wt-guidance" value="${weights.guidance}" step="0.1" min="0"></div>
+      <div><label>Setup weight</label><input type="number" id="wt-setup" value="${weights.setup}" step="0.1" min="0"></div>
+    </div>
+    <div style="display:flex;gap:12px;align-items:center">
+      <div style="flex:0 0 160px"><label>Beat weight</label><input type="number" id="wt-beat" value="${weights.beat}" step="0.1" min="0"></div>
+      <div style="flex:1"></div>
+      <button class="btn-run" id="wt-save" onclick="saveWeights()">Save Weights</button>
+      <button class="dp-btn" onclick="fetch('/api/weights',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({beat:0.7,guidance:1.0,setup:1.0,fundamentals:1.5})}).then(()=>renderPerformance())" style="font-size:11px">Reset to defaults</button>
+    </div>
+  </div>
+</div>`;
+}
+
+// ── Activity banner ────────────────────────────────────────────────────────────
+let _bnrDismissed=false;
+let _bnrActiveJobs=new Set();
+const _bnrLabels={screen:'Screening',analyze:'Analysis',calibrate:'Calibration',reflect:'Reflection'};
+
+function hideBanner(){_bnrDismissed=true;$('run-banner').classList.remove('visible');}
+
+function _bnrShow(type){
+  _bnrDismissed=false;
+  _bnrActiveJobs.add(type);
+  _bnrUpdate();
+}
+function _bnrHide(type){
+  _bnrActiveJobs.delete(type);
+  _bnrUpdate();
+}
+function _bnrUpdate(){
+  const banner=$('run-banner');
+  if(!_bnrDismissed&&_bnrActiveJobs.size>0){
+    const names=[..._bnrActiveJobs].map(t=>_bnrLabels[t]||t);
+    $('bnr-text').textContent=names.join(', ')+' running…';
+    banner.classList.add('visible');
+  } else if(_bnrActiveJobs.size===0){
+    banner.classList.remove('visible');
+  }
+}
+
+async function _pollJobs(){
+  // Polling keeps the banner in sync if user opens the page while a job is already running
+  try{
+    const res=await fetch('/api/jobs');
+    if(!res.ok)return;
+    const jobs=await res.json();
+    const running=Array.isArray(jobs)?jobs.filter(j=>j.status==='running'):[];
+    if(running.length){
+      if(!_bnrDismissed){
+        const names=running.map(j=>_bnrLabels[j.type]||j.type);
+        const txt=running.length>1?`${running.length} jobs (${names.join(', ')})`:names[0];
+        $('bnr-text').textContent=txt+' running…';
+        $('run-banner').classList.add('visible');
+      }
+    } else if(_bnrActiveJobs.size===0){
+      $('run-banner').classList.remove('visible');
+    }
+  }catch(e){}
+}
+setInterval(_pollJobs,3000);
+
+// ── Mobile sidebar ─────────────────────────────────────────────────────────────
+function mobToggle(){
+  const open=$('sidebar').classList.toggle('mob-open');
+  $('mob-bg').classList.toggle('mob-open',open);
+  document.body.style.overflow=open?'hidden':'';
+}
+function mobClose(){
+  $('sidebar').classList.remove('mob-open');
+  $('mob-bg').classList.remove('mob-open');
+  document.body.style.overflow='';
 }
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
@@ -1180,6 +1858,7 @@ document.addEventListener('DOMContentLoaded',()=>{
   const ts=DATA.generated_at?new Date(DATA.generated_at).toLocaleString('en-US',{month:'short',day:'numeric',year:'numeric',hour:'2-digit',minute:'2-digit'}):'—';
   $('gen-ts').textContent=ts;
   render('overview');
+  setTimeout(_pollJobs,600);
 });
 </script>
 </body>

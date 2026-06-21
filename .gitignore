@@ -228,3 +228,9 @@ reports/
 
 # Obsidian vault
 .obsidian/
+
+# Local trading data / sync artifacts (IBKR Flex statements, Syncthing)
+/*.xml
+.sync-conflict-*
+.stfolder/
+.stignore
