@@ -33,6 +33,9 @@ Items marked ⟐ are now **corroborated by the `learn` loop on real trade histor
 > Source material for #14–#17 lives in `docs/research/earnings_playbook_v2.md`
 > (decision framework) and `docs/research/earnings_toolkit_ibkr_reference.py`
 > (a working `ib_async` options-snapshot script — the reference implementation for #3b).
+> **#18** captures on-strategy ideas mined from the saved investing-reels feed
+> (2026-06-23); its biggest contribution — a strategy-validation methodology — is
+> folded into **#17** and is the cure for #14/#15's unvalidated-threshold caveat.
 
 ---
 
@@ -408,6 +411,15 @@ Items marked ⟐ are now **corroborated by the `learn` loop on real trade histor
 - [ ] **Guide-dominance test:** P&L split by `guide` regardless of beat → if guide explains more variance, re-weight guidance over beat (feeds `suggest-weights`, #1)
 - [ ] **Per-ticker fade rate:** for repeat names, compute Block-C stats; some names reveal as "never own into the print, always wait for the dip"
 
+### Validation methodology (from "4 Steps to Validate a Quant Strategy" reel, 2026-06-23)
+Apply this rigour to every tunable threshold in #14/#15 (EV/implied 0.25, fade 0.60, coverage 0.70, run-up 12%, sizing caps), not just to whole strategies:
+- [ ] **Parameter-stability test:** sweep each threshold over a range, plot a heatmap of outcome vs. parameter. Robust = a broad plateau of good results; overfit = an isolated spike. This is the direct cure for "the thresholds are unvalidated priors"
+- [ ] **Monte Carlo on every parameter set** (not one): bootstrap/reshuffle the trade sequence per setting to get an *outcome distribution* (and drawdown distribution), not a single backtest number
+- [ ] **Cluster analysis** of the simulation results as a meta-check (do good settings cluster, or are they scattered noise?)
+- [ ] **In-sample / out-of-sample + walk-forward** validation before trusting any threshold live
+- [ ] **Risk-adjusted metrics** in `stats`: add Sharpe, Sortino, MaxDD, hit-rate, turnover (we currently only show win-rate / avg P&L)
+- [ ] Engine references when we outgrow a hand-rolled harness: **VectorBT** / **Zipline** (Python), **Nautilus** (Rust, multi-venue), **ZipLime** (AI idea→code→backtest)
+
 ### Log schema v2 (prerequisite — Part 5)
 - [ ] Extend the trade log with T-1 context (`implied_move_pct`, `iv_rank`, `term_ratio`, `skew_25d`, `runup_1m_pct`, `runup_vs_sector_1m`, `dist_52w_high_pct`, `revision_direction_90d`, `short_interest_pct`, `regime_flag`), outcome (`beat_eps`, `beat_rev`, `guide`), reaction (`move_d1/d5/d20`, `coverage_ratio`), and management (`gate_path`, `action`, `pnl_final`)
 - [ ] Quarterly calibration loop: recompute hit rate by gate, regime, and run-up bucket; any gate whose pass-group doesn't beat its fail-group by a meaningful margin gets its threshold adjusted or cut (ties into #13 dream-mode)
@@ -415,6 +427,39 @@ Items marked ⟐ are now **corroborated by the `learn` loop on real trade histor
 ### Notes
 - Gated on trade volume — most recipes need a few dozen logged trades to mean anything
 - The log schema should be built early (cheap) even before the backtests run, so data accumulates from now
+- The reel's provocative companion ("you don't need to backtest") refers to live forward-testing/paper-trading as the ultimate validation — see #18's paper-trading loop
+
+---
+
+## #18 — Research-feed signal ideas (saved investing reels, reviewed 2026-06-23)
+
+**Goal:** Capture the genuinely useful, on-strategy ideas surfaced by the ReelDigest "invest" collection (38 transcribed reels on `pochanpi`). Each item cross-references the section it enhances; ordered by value/effort. (Filtered out as off-strategy: intraday day-trading patterns, order-book square-root law, business-acquisition / brand / hospitality reels, and SaaS-product ads like Barebone.)
+
+### External validation (no action — morale/strategic)
+- Two reels independently name **TradingAgents**: one as a "top fast-growing AI-finance GitHub repo," another endorsing exactly our **three-layer** structure ("don't build a bot — build a research desk + agent framework + data layer, then execution; start in paper trading"). Our architecture direction is externally corroborated.
+
+### High value / low effort
+- [ ] **Insider-signal refinement** (cross-ref: fundamentals analyst, which already has `get_insider_transactions`). The high-signal patterns are **cluster buys** and **sell→buy reversals** (insiders who stop selling and start buying), *not* any insider activity — two reels corroborate this with real forward-return claims (medtech: BSX/ABT/GEHC; Toyota→Joby). Detect those patterns specifically; consider **SEC Form-4 (EDGAR)** as a more complete/timely source than yfinance.
+- [ ] **Historical-relative valuation** in `fundamentals_scorer.py`: score valuation vs. the name's *own* historical median (the medtech reel: 17× EV/EBITDA vs. a 31× median), not just absolute metrics — cheap, strong context.
+- [ ] **Risk-adjusted stats** (also listed in #17): Sharpe / Sortino / MaxDD / hit-rate / turnover in the `stats` command.
+
+### Medium value — reinforce the regime/sizing layer (#15 / #6b)
+- [ ] **Macro overlay can veto strong bottom-up signals** — the medtech reel is the canonical case: compelling insider buys + cheap valuation, but tariffs / reimbursement cuts / FDA slowdowns / policy make it un-underwritable. The #15 overlay should be able to *downgrade or veto* even strong scores on sector-level policy headwinds.
+- [ ] **HMM market-regime classifier** (bull / bear / sideways from price + volatility) as a richer alternative to the hard VIX/SPX-50dma gate in #15 (RenTec-style; `QF-Lib` referenced).
+- [ ] **Positioning data** — **CFTC COT** (free, weekly) for index/futures crowding and **dealer gamma** for index support/resistance/amplification, as market-level inputs to the regime + sizing layer (single-stock COT n/a, so this is a macro-layer signal).
+- [ ] **Volatility-drag-aware sizing** — geometric growth = arithmetic − variance/2; high-vol names erode compounding. Reinforces the #15 implied-move sizing cap: penalise high-vol names beyond the implied-move loss cap alone.
+
+### Medium value — other
+- [ ] **Paper-trading / forward-test loop** (cross-ref #1, #16): explicitly recommended over backtesting alone. A mode that logs the council's recommendations as a shadow portfolio and scores them forward against real outcomes — the live-validation complement to #17's historical backtest.
+- [ ] **Premium-selling structures** (cross-ref #5, and #14b's "route bad-asymmetry names to premium-selling" follow-up): **calendar spreads** for sideways / high-IV-crush names (profit from time decay instead of owning the binary event).
+- [ ] **#12 OSS comparison set** (concrete candidates to benchmark/integrate): `AI-Trader`, `QuantDinger`, `daily_stock_analysis`, `Vibe-Trading`, `ai-hedge-fund` (virattt), `TradeMaster` (RL). The `ai-hedge-fund` repo's **investor-philosophy personas** (Graham / Buffett / Munger / Ackman) are an alternative to our generic council personas (Contrarian / First-Principles / …) worth A/B-ing.
+
+### Low value / infra references (note only)
+- [ ] A reel's full algo-trading blueprint suggests stack pieces we could adopt incrementally: **DuckDB** (fast file-based store vs. our JSON), **FMP** (alt fundamentals vendor vs. yfinance), **MLflow** (experiment tracking once many strategy variants exist), **Prefect** (orchestration for a scheduled daily fetch→score→allocate→log job — overlaps #13 dream-mode). Standard quant strategy families (momentum / mean-reversion / seasonality) and the 8-step ML workflow are noted for if we ever add a statistical signal layer alongside the LLM one.
+
+### Notes
+- Source: `/home/pochan/ReelDigest/summaries/*.md` on `pochanpi` (collection `invest`; web view `reeldigest.ochanis.in/c/invest` is auth-gated).
+- Strongest single takeaway: the **validation methodology** (now folded into #17) directly answers the recurring "these thresholds are unvalidated priors" caveat on #14/#15.
 
 ---
 
@@ -426,4 +471,4 @@ Items marked ⟐ are now **corroborated by the `learn` loop on real trade histor
 
 ---
 
-*Last updated: 2026-06-22*
+*Last updated: 2026-06-23*
