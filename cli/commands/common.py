@@ -45,6 +45,36 @@ def _fetch_sector(ticker: str) -> str:
         return "Unknown"
 
 
+# Provider → env var holding its API key. Numbered variants (KEY, KEY_2 … KEY_8)
+# let a screen/dashboard run round-robin multiple keys across workers/advisors.
+_PROVIDER_KEY_ENV = {
+    "deepseek":   "DEEPSEEK_API_KEY",
+    "xai":        "XAI_API_KEY",
+    "openrouter": "OPENROUTER_API_KEY",
+    "qwen":       "DASHSCOPE_API_KEY",
+    "glm":        "ZHIPU_API_KEY",
+    "openai":     "OPENAI_API_KEY",
+    "anthropic":  "ANTHROPIC_API_KEY",
+}
+
+
+def gather_api_keys(provider: str) -> list[str]:
+    """Collect a provider's API keys from the environment, newest-first.
+
+    Reads `KEY`, `KEY_2` … `KEY_8` for the provider's base env var, skipping
+    blanks and duplicates. Returns [] when the provider is unknown or unset.
+    """
+    import os
+    base_env = _PROVIDER_KEY_ENV.get((provider or "").lower(), "")
+    keys: list[str] = []
+    if base_env:
+        for suffix in ["", "_2", "_3", "_4", "_5", "_6", "_7", "_8"]:
+            k = os.environ.get(base_env + suffix, "").strip()
+            if k and k not in keys:
+                keys.append(k)
+    return keys
+
+
 def save_report_to_disk(final_state: dict, ticker: str, save_path: Path) -> Path:
     """Save complete analysis report to disk with organised subfolders."""
     save_path.mkdir(parents=True, exist_ok=True)

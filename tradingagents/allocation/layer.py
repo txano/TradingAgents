@@ -13,6 +13,7 @@ from tradingagents.allocation.fundamentals_scorer import fetch_fundamental_metri
 from tradingagents.allocation.pricing import fetch_pricing_context, format_pricing
 from tradingagents.allocation.asymmetry import build_asymmetry, format_asymmetry
 from tradingagents.allocation.crowding import fetch_crowding, format_crowding
+from tradingagents.earnings.peers import build_peer_readthrough, format_peer_oneliner
 from tradingagents.allocation.weights import apply_weights, load_weights
 from tradingagents.learning.lessons import distill_lessons, load_cached_lessons, load_reflections
 
@@ -107,9 +108,12 @@ class AllocationLayer:
     def _load_historical_scores(self, ticker: str, current_base: Path) -> list[dict]:
         """Return parsed score dicts from past screening runs for this ticker.
 
-        Scans every sibling screening_* directory (excluding the current one),
-        reads the JSON block from earnings_brief.md, and returns them oldest-first.
+        Scans every sibling run directory (both screening_* and earnings_*,
+        excluding the current one), reads the JSON block from earnings_brief.md,
+        and returns them oldest-first.
         """
+        from tradingagents.reports_layout import RUN_PREFIXES
+
         history: list[dict] = []
         reports_root = current_base.parent
         if not reports_root.is_dir():
@@ -118,7 +122,7 @@ class AllocationLayer:
         for d in sorted(reports_root.iterdir()):
             if not d.is_dir() or d == current_base:
                 continue
-            if not d.name.startswith("screening_"):
+            if not d.name.startswith(RUN_PREFIXES):
                 continue
             brief_path = d / ticker / "earnings_brief.md"
             if not brief_path.exists():
@@ -129,7 +133,7 @@ class AllocationLayer:
                 if not m:
                     continue
                 scores = json.loads(m.group(1))
-                date_m = re.match(r"screening_(\d{4}-\d{2}-\d{2})", d.name)
+                date_m = re.match(r"(?:screening|earnings)_(\d{4}-\d{2}-\d{2})", d.name)
                 scores["_date"] = date_m.group(1) if date_m else d.name
                 history.append(scores)
             except Exception:
@@ -259,6 +263,23 @@ class AllocationLayer:
                 ctx["crowding"] = crowding or {}
                 ctx["crowding_summary"] = format_crowding(crowding)
 
+                # Peer read-through (#9) — cached at screening time, live fallback
+                peers = None
+                peers_path = base / ticker / "peers.json"
+                if peers_path.exists():
+                    try:
+                        peers = json.loads(peers_path.read_text(encoding="utf-8"))
+                    except Exception:
+                        pass
+                if peers is None:
+                    try:
+                        peers = build_peer_readthrough(ticker)
+                        peers_path.write_text(json.dumps(peers, indent=2, default=str), encoding="utf-8")
+                    except Exception:
+                        peers = None
+                ctx["peers"] = peers or {}
+                ctx["peer_summary"] = format_peer_oneliner(peers)
+
             else:
                 ctx.setdefault("fundamentals_score",   0)
                 ctx.setdefault("bs_quality",           "Adequate")
@@ -270,6 +291,8 @@ class AllocationLayer:
                 ctx.setdefault("asymmetry_summary",    "Not available")
                 ctx.setdefault("crowding",             {})
                 ctx.setdefault("crowding_summary",     "Not available")
+                ctx.setdefault("peers",                {})
+                ctx.setdefault("peer_summary",         "Not available")
 
             # Historical screening data
             history = self._load_historical_scores(ticker, base) if base else []

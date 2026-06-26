@@ -37,9 +37,14 @@ tradingagents allocate [--budget 100000] [--dir reports/screening_...]
 tradingagents earnings-calendar
 
 # Trade management
-tradingagents import-ibkr  # IBKR Flex XML trade import
-tradingagents trades       # view trade history table
-tradingagents reflect      # post-mortem on a completed trade
+tradingagents import-ibkr     # IBKR Flex XML trade import
+#   flags: --file PATH (parse a manual XML, skip the API) · --all (ignore the analyzed-ticker filter)
+#          --query-id ID (override IBKR_FLEX_QUERY_ID) · --debug (print raw IBKR responses)
+#          --yes/-y (skip confirmation — for cron) · --screened-within N (only trades screened ≤N days
+#          before purchase: uses the entry/open date, falls back to ≤30d before exit when entry is unknown)
+tradingagents backfill-trades # backfill schema-v2 context/outcome/reaction on trades.json (#17)
+tradingagents trades          # view trade history table
+tradingagents reflect         # post-mortem on a completed trade
 
 # Calibration & improvement
 tradingagents calibrate    # predictions vs actual outcomes
@@ -130,7 +135,7 @@ Pydantic schemas live in `tradingagents/agents/schemas.py`.
 
 ### Earnings → Scoring → Allocation loop
 
-1. `EarningsLayer.analyze_and_score(ticker, date, state)` → `earnings_brief.md` + JSON scores (`beat_score`, `guidance_score`, `setup_score`, each −5 to +5) plus a `fundamentals_score` (−5 to +5) from `allocation/fundamentals_scorer.py`, which grounds the LLM in hard yfinance metrics (margins, FCF, debt/EBITDA) saved to `fundamentals_score.json`. Pricing context (spot, fwd P/E, options-implied earnings move) is saved to `pricing.json` by `allocation/pricing.py`. Payoff asymmetry (E[move|beat], E[move|miss], fade rate, coverage ratio, and EV of a long) is computed from the last ~8 historical prints by `allocation/asymmetry.py` and saved to `asymmetry.json`; both feed the council. `validator.py` enforces the EV gate (#14b): a long with computable `EV ≤ 0` or `EV/implied_move < 0.25` is a hard violation (re-prompt); quality names with null EV but high fade / low coverage get a soft "size down" advisory (`asymmetry_advisories`), not a skip. Crowding/run-up signals (1m/3m return vs sector ETF, distance from 52w high, EPS-revision momentum) are computed by `allocation/crowding.py`, saved to `crowding.json`, shown on the council `Crowding:` line, and surfaced as soft `crowding_advisories` (#14c) — both soft advisory types render in one combined **Sizing Advisories** report section.
+1. `EarningsLayer.analyze_and_score(ticker, date, state)` → `earnings_brief.md` + JSON scores (`beat_score`, `guidance_score`, `setup_score`, each −5 to +5) plus a `fundamentals_score` (−5 to +5) from `allocation/fundamentals_scorer.py`, which grounds the LLM in hard yfinance metrics (margins, FCF, debt/EBITDA) saved to `fundamentals_score.json`. Pricing context (spot, fwd P/E, options-implied earnings move) is saved to `pricing.json` by `allocation/pricing.py`. Payoff asymmetry (E[move|beat], E[move|miss], fade rate, coverage ratio, and EV of a long) is computed from the last ~8 historical prints by `allocation/asymmetry.py` and saved to `asymmetry.json`; both feed the council. `validator.py` enforces the EV gate (#14b): a long with computable `EV ≤ 0` or `EV/implied_move < 0.25` is a hard violation (re-prompt); quality names with null EV but high fade / low coverage get a soft "size down" advisory (`asymmetry_advisories`), not a skip. Crowding/run-up signals (1m/3m return vs sector ETF, distance from 52w high, EPS-revision momentum) are computed by `allocation/crowding.py`, saved to `crowding.json`, shown on the council `Crowding:` line, and surfaced as soft `crowding_advisories` (#14c) — both soft advisory types render in one combined **Sizing Advisories** report section. Peer earnings read-through (#9, `earnings/peers.py`) pulls EPS surprise + day-1 reaction for curated `PEER_MAP` peers that reported in the last ~35d, feeds a `PEER READ-THROUGH` section into the brief prompt, persists `peers.json`, and shows a `Peers:` council line; the **beat-and-still-fall** pattern (`sector_bar_elevated`) is a soft one-tier downgrade in both the brief and council prompts.
 2. `weights.py` computes `weighted_score = Σ weight_i × score_i` over the four buckets (defaults: beat 0.7, guidance 1.0, setup 1.0, fundamentals 1.5 — single source `weights.DEFAULTS`); stored at `~/.tradingagents/allocation_weights.json`. Signal thresholds in the council prompt scale with these weights.
 3. `council.py` runs 11 LLM calls in 3 rounds (5 persona advisors → 5 persona-aware cross-reviews → 1 synthesis). Failed advisors are dropped, not stubbed. Advisors can run on different models via `config["council_advisor_models"]` (list of `"provider:model"`, env `TRADINGAGENTS_COUNCIL_ADVISOR_MODELS`); synthesis always uses the main LLM.
 4. `validator.py` deterministically checks the allocation (30% position cap, 35%-of-budget sector cap, max 6 positions, short rules, budget arithmetic); violations trigger one corrective re-prompt, and any that remain are appended to the report as a `### ⚠ Constraint Check` section.
@@ -162,7 +167,9 @@ Review→apply: re-running `learn` does a *fresh* analysis (new LLM call → pos
 | Agent logs | `~/.tradingagents/logs/` |
 | Reports | `./reports/` (project root) |
 
-Report folders: `reports/screening_YYYY-MM-DD_TIMESTAMP/TICKER/` for batch runs; `reports/TICKER_YYYYMMDD_HHMMSS/` for individual `analyze` runs.
+Report folders: batch screening runs live under `reports/earnings/{screening,earnings}_YYYY-MM-DD_TIMESTAMP/TICKER/` (`screening_*` = plain screen, `earnings_*` = calendar-driven); individual `analyze` runs go to `reports/analysis/TICKER_YYYYMMDD_HHMMSS/` (legacy: repo root). `tradingagents/reports_layout.py` is the single source of truth for this layout — `runs_root()` returns the write location and `iter_run_dirs()` lists all runs (both prefixes, newest-first, incl. legacy root). Use it everywhere instead of globbing `reports/screening_*` directly, so the CLI and dashboard never drift.
+
+Trade-log schema: `tradingagents/trade_log.py` defines the v2 field set (T-1 context, outcome, reaction, management) for #17. `ensure_v2()` (run on every IBKR import) stamps `schema_version` and adds null keys; `backfill-trades` links each trade to its screening run and fills context from the saved `pricing/crowding/asymmetry.json` + yfinance. Idempotent and guarded.
 
 ### CLI web server (`cli/server.py`)
 

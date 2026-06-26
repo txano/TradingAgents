@@ -313,8 +313,9 @@ def reflect():
 
         screening_run = None
         if analysis_path:
+            from tradingagents.reports_layout import RUN_PREFIXES
             for parent in Path(analysis_path).parents:
-                if parent.name.startswith("screening_"):
+                if parent.name.startswith(RUN_PREFIXES):
                     screening_run = str(parent)
                     break
         if not screening_run:

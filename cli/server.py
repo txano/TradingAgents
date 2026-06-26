@@ -2,7 +2,6 @@
 
 import asyncio
 import datetime
-import os
 import queue
 import threading
 import uuid
@@ -22,8 +21,10 @@ from tradingagents.default_config import DEFAULT_CONFIG
 from tradingagents.graph.trading_graph import TradingAgentsGraph
 from tradingagents.earnings import EarningsLayer
 from tradingagents.earnings.scorer import parse_score
-from tradingagents.allocation import AllocationLayer
-from tradingagents.allocation.layer import build_advisor_llms, parse_allocation
+from tradingagents.allocation.layer import parse_allocation
+from tradingagents.screening_table import write_screening_table
+from cli.commands.common import _fetch_sector, gather_api_keys
+from cli.commands.screen import run_allocation, screen_ticker
 
 app = FastAPI(title="TradingAgents", docs_url=None, redoc_url=None)
 
@@ -125,17 +126,6 @@ def _finish(job_id: str, success: bool = True) -> None:
 # Config helpers
 # --------------------------------------------------------------------------- #
 
-_PROVIDER_KEY_ENV = {
-    "deepseek":   "DEEPSEEK_API_KEY",
-    "xai":        "XAI_API_KEY",
-    "openrouter": "OPENROUTER_API_KEY",
-    "qwen":       "DASHSCOPE_API_KEY",
-    "glm":        "ZHIPU_API_KEY",
-    "openai":     "OPENAI_API_KEY",
-    "anthropic":  "ANTHROPIC_API_KEY",
-}
-
-
 def _build_config(params: dict) -> tuple[dict, list[str]]:
     config = DEFAULT_CONFIG.copy()
     config["llm_provider"] = params.get("provider", "deepseek").lower()
@@ -144,24 +134,7 @@ def _build_config(params: dict) -> tuple[dict, list[str]]:
     config["max_debate_rounds"] = int(params.get("depth", 1))
     config["max_risk_discuss_rounds"] = int(params.get("depth", 1))
     config["backend_url"] = params.get("backend_url") or None
-
-    base_env = _PROVIDER_KEY_ENV.get(config["llm_provider"], "")
-    api_keys: list[str] = []
-    if base_env:
-        for suffix in ["", "_2", "_3", "_4", "_5", "_6", "_7", "_8"]:
-            k = os.environ.get(base_env + suffix, "").strip()
-            if k and k not in api_keys:
-                api_keys.append(k)
-
-    return config, api_keys
-
-
-def _fetch_sector(ticker: str) -> str:
-    try:
-        import yfinance as yf
-        return yf.Ticker(ticker).info.get("sector") or "Unknown"
-    except Exception:
-        return "Unknown"
+    return config, gather_api_keys(config["llm_provider"])
 
 
 # --------------------------------------------------------------------------- #
@@ -190,7 +163,8 @@ def _run_screen(job_id: str, params: dict) -> None:
             folder_name = f"earnings_{earnings_date}_{timestamp}"
         else:
             folder_name = f"screening_{trade_date}_{timestamp}"
-        screening_dir = Path("reports") / "earnings" / folder_name
+        from tradingagents.reports_layout import runs_root
+        screening_dir = runs_root() / folder_name
         screening_dir.mkdir(parents=True, exist_ok=True)
 
         import json as _json_meta
@@ -216,49 +190,18 @@ def _run_screen(job_id: str, params: dict) -> None:
         results_lock = threading.Lock()
 
         def process(ticker: str, worker_config: dict) -> None:
+            # Shared with the CLI `screen` command so both write the same artifacts
+            # (pricing/asymmetry/crowding/peers.json) into the same layout.
             ticker_dir = screening_dir / ticker
-            ticker_dir.mkdir(exist_ok=True)
-            sector = _fetch_sector(ticker)
             log(f"[{ticker}] Starting...")
-            try:
-                ta = TradingAgentsGraph(analysts, debug=False, config=worker_config)
-                final_state, decision = ta.propagate(ticker, trade_date)
-
-                from cli.commands.common import save_report_to_disk
-                save_report_to_disk(final_state, ticker, ticker_dir)
-
-                layer = EarningsLayer(llm=ta.deep_thinking_llm, news_lookback_days=90)
-                brief, score = layer.analyze_and_score(
-                    ticker, trade_date, final_state, save_dir=str(ticker_dir)
-                )
-
-                log(f"[{ticker}] Fundamentals: {score.get('fundamentals_score', 0):+d}/5 ({score.get('bs_quality', '?')})")
-                result = {
-                    "ticker": ticker, "sector": sector, "ta_decision": decision,
-                    "brief": brief, "earnings_date": score.get("earnings_date", "unknown"),
-                    "beat_score": score.get("beat_score", 0),
-                    "guidance_score": score.get("guidance_score", 0),
-                    "setup_score": score.get("setup_score", 0),
-                    "total_score": score.get("total_score", 0),
-                    "signal": score.get("signal", "?"),
-                    "confidence": score.get("confidence", "?"),
-                    "one_liner": score.get("one_liner", ""),
-                    "fundamentals_score":   score.get("fundamentals_score", 0),
-                    "bs_quality":           score.get("bs_quality", "Adequate"),
-                    "margin_trend":         score.get("margin_trend", "Stable"),
-                    "growth_quality":       score.get("growth_quality", "Medium"),
-                    "fundamentals_summary": score.get("fundamentals_summary", ""),
-                }
-                tot = result["total_score"]
-                log(f"[{ticker}] Done → {result['signal']}  score: {tot:+d}")
-            except Exception as exc:
-                result = {
-                    "ticker": ticker, "sector": sector, "ta_decision": "ERROR",
-                    "brief": "", "earnings_date": "unknown", "beat_score": 0,
-                    "guidance_score": 0, "setup_score": 0, "total_score": -99,
-                    "signal": "ERROR", "confidence": "—", "one_liner": str(exc),
-                }
-                log(f"[{ticker}] ERROR: {exc}")
+            result = screen_ticker(
+                ticker, trade_date, ticker_dir, worker_config,
+                analysts=analysts, log=log,
+            )
+            if result.get("signal") == "ERROR":
+                log(f"[{ticker}] ERROR: {result.get('one_liner', '')}")
+            else:
+                log(f"[{ticker}] Done → {result['signal']}  score: {result.get('total_score', 0):+d}")
             with results_lock:
                 results.append(result)
 
@@ -283,20 +226,10 @@ def _run_screen(job_id: str, params: dict) -> None:
 
         # Save results table
         sorted_results = sorted(results, key=lambda r: r.get("total_score", 0), reverse=True)
-        table_lines = [
-            f"# Earnings Screener — {trade_date}\n\n",
-            "| # | Ticker | Sector | Earnings | Beat | Guidance | Setup | Total | Signal | Confidence | One-liner |\n",
-            "|---|--------|--------|----------|------|----------|-------|-------|--------|------------|-----------|\n",
-        ]
-        for i, r in enumerate(sorted_results, 1):
-            table_lines.append(
-                f"| {i} | {r['ticker']} | {r.get('sector','Unknown')} | {r.get('earnings_date','?')} "
-                f"| {r.get('beat_score',0):+d} | {r.get('guidance_score',0):+d} "
-                f"| {r.get('setup_score',0):+d} | {r.get('total_score',0):+d} "
-                f"| {r.get('signal','?')} | {r.get('confidence','?')} "
-                f"| {r.get('one_liner','')} |\n"
-            )
-        (screening_dir / "screening_table.md").write_text("".join(table_lines), encoding="utf-8")
+        write_screening_table(
+            sorted_results, screening_dir / "screening_table.md",
+            f"# Earnings Screener — {trade_date}",
+        )
 
         log("")
         log("── Results ────────────────────────────────────────────")
@@ -309,14 +242,9 @@ def _run_screen(job_id: str, params: dict) -> None:
         log("")
         log("Running Allocation Manager...")
         try:
-            ta_alloc = TradingAgentsGraph(analysts, debug=False, config=config)
-            alloc_layer = AllocationLayer(llm=ta_alloc.deep_thinking_llm, budget=budget, advisor_llms=build_advisor_llms(config))
-            allocation_report = alloc_layer.allocate(
-                results=sorted_results,
-                trade_date=trade_date,
-                screening_dir=screening_dir,
-                save=True,
-                progress_cb=lambda msg: log(f"  {msg}"),
+            allocation_report = run_allocation(
+                sorted_results, trade_date, screening_dir, budget, config,
+                analysts=analysts, progress=lambda msg: log(f"  {msg}"),
             )
             if allocation_report:
                 alloc_data = parse_allocation(allocation_report)
@@ -398,9 +326,9 @@ def _run_calibrate(job_id: str, params: dict) -> None:
         if run_name:
             target = earnings_base / run_name
         else:
-            # Pick the most recent uncalibrated run
-            all_runs = sorted(earnings_base.glob("screening_*/"), key=lambda p: p.name, reverse=True) if earnings_base.is_dir() else []
-            candidates = [r for r in all_runs
+            # Pick the most recent uncalibrated run (both screening_/earnings_ prefixes)
+            from tradingagents.reports_layout import iter_run_dirs
+            candidates = [r for r in iter_run_dirs(reports_dir)
                           if (r / "screening_table.md").exists() and not (r / "calibration.json").exists()]
             if not candidates:
                 log("No uncalibrated screening runs found.")
@@ -627,10 +555,8 @@ def _run_allocate(job_id: str, params: dict) -> None:
         if run_name:
             screening_dir = earnings_base / run_name
         else:
-            candidates = sorted(
-                [d for d in earnings_base.glob("screening_*/") if d.is_dir()],
-                key=lambda p: p.name, reverse=True,
-            ) if earnings_base.is_dir() else []
+            from tradingagents.reports_layout import iter_run_dirs
+            candidates = iter_run_dirs(Path("reports"))
             if not candidates:
                 log("No screening runs found.")
                 _finish(job_id, False)
@@ -691,14 +617,9 @@ def _run_allocate(job_id: str, params: dict) -> None:
         sorted_results = sorted(results, key=lambda r: r.get("total_score", 0), reverse=True)
         log(f"Found {len(sorted_results)} tickers.")
 
-        ta_alloc     = TradingAgentsGraph(analysts, debug=False, config=config)
-        alloc_layer  = AllocationLayer(llm=ta_alloc.deep_thinking_llm, budget=budget, advisor_llms=build_advisor_llms(config))
-        alloc_report = alloc_layer.allocate(
-            results=sorted_results,
-            trade_date=trade_date,
-            screening_dir=screening_dir,
-            save=True,
-            progress_cb=lambda msg: log(f"  {msg}"),
+        alloc_report = run_allocation(
+            sorted_results, trade_date, screening_dir, budget, config,
+            analysts=analysts, progress=lambda msg: log(f"  {msg}"),
         )
         if alloc_report:
             alloc_data = parse_allocation(alloc_report)

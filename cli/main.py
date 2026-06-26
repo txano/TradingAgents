@@ -1280,7 +1280,7 @@ from cli.commands.improve   import improve
 from cli.commands.learn     import learn
 from cli.commands.trades    import trades, calibrate, correlation, stats
 from cli.commands.allocate  import allocate, allocation_weights
-from cli.commands.ibkr      import import_ibkr
+from cli.commands.ibkr      import import_ibkr, backfill_trades
 from cli.commands.reports   import build_web
 from cli.commands.dashboard import dashboard
 
@@ -1296,6 +1296,7 @@ app.command()(stats)
 app.command()(allocate)
 app.command("allocation-weights")(allocation_weights)
 app.command("import-ibkr")(import_ibkr)
+app.command("backfill-trades")(backfill_trades)
 app.command("build-web")(build_web)
 app.command()(dashboard)
 

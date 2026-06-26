@@ -127,8 +127,16 @@ class EarningsLayer:
 
         (out / "earnings_brief.md").write_text(brief, encoding="utf-8")
 
+        # Peer read-through (#9) — persisted separately for the council one-liner
+        peer_data = earnings_context.get("peer_data")
+        if peer_data:
+            (out / "peers.json").write_text(
+                json.dumps(peer_data, indent=2, default=str), encoding="utf-8"
+            )
+
         # Also save the raw data used so you can audit/replay
-        raw_data = {k: v for k, v in earnings_context.items() if k != "recent_news"}
+        raw_data = {k: v for k, v in earnings_context.items()
+                    if k not in ("recent_news", "peer_data")}
         raw_data["recent_news_snippet"] = (
             earnings_context.get("recent_news", "")[:500] + "..."
         )

@@ -195,6 +195,12 @@ run-up, strong outperformance vs the sector, sitting within a few % of the 52-we
 high, or a cluster of upward estimate revisions), the bar to clear is higher than \
 the headline number: cut conviction one tier on that long. Crowding is a soft \
 size-down signal, not an automatic SKIP.
+- Peers (read-through from industry peers that already reported this season) is a \
+soft sector gate. A "⚠ elevated bar" tag means at least one peer BEAT AND STILL \
+FELL — the most dangerous pattern (good results, bad reaction): the sector is \
+punishing prints regardless of quality, so cut conviction one tier on longs in that \
+name. Peers shown missing (M) on a shared driver is a weaker tailwind — lean toward \
+SKIP over BUY. Peers beating and holding their gains is a genuine tailwind.
 - Historical lessons from past trades are provided — apply them when relevant; \
 they represent real patterns observed in this specific strategy.
 - Cash not deployed is acceptable; never force marginal trades.
@@ -299,6 +305,7 @@ Fundamentals note: {fundamentals_summary}
 Pricing:          {pricing_summary}
 Asymmetry/EV:     {asymmetry_summary}
 Crowding:         {crowding_summary}
+Peers:            {peer_summary}
 History ({historical_count} prior screening(s), avg_total={historical_avg_total}, trend={score_trend}):
   {historical_brief}
 Signal: {signal} | Confidence: {confidence}
@@ -339,6 +346,7 @@ def _format_sections(contexts: list[dict]) -> str:
                 pricing_summary=ctx.get("pricing_summary", "Not available"),
                 asymmetry_summary=ctx.get("asymmetry_summary", "Not available"),
                 crowding_summary=ctx.get("crowding_summary", "Not available"),
+                peer_summary=ctx.get("peer_summary", "Not available"),
                 historical_count=ctx.get("historical_count", 0),
                 historical_avg_total=avg_str,
                 score_trend=ctx.get("score_trend", "New ticker"),

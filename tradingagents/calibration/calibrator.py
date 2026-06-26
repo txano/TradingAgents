@@ -257,8 +257,13 @@ def calibrate_screening_run(screening_dir: Path) -> dict:
 
     (screening_dir / "calibration.md").write_text("".join(lines), encoding="utf-8")
 
-    # Always refresh the master calibration file in the parent reports/ folder
-    update_master_calibration(screening_dir.parent)
+    # Always refresh the master calibration file at the repo reports/ root
+    # (one stable location, regardless of whether the run sits under
+    # reports/earnings/ or the legacy repo root).
+    root = screening_dir.parent
+    if root.name == "earnings":
+        root = root.parent
+    update_master_calibration(root)
 
     return result
 
@@ -351,9 +356,18 @@ def update_master_calibration(reports_dir: Path) -> None:
 
 
 def load_all_calibrations(reports_dir: Path) -> list[dict]:
-    """Load all calibration.json files from screening runs, newest first."""
+    """Load all calibration.json files from screening runs, newest first.
+
+    ``reports_dir`` is the repo reports root; runs are discovered under
+    reports/earnings/ (and the legacy root) via the shared layout helper.
+    """
+    from tradingagents.reports_layout import iter_run_dirs
+
     results = []
-    for cal_file in sorted(reports_dir.glob("screening_*/calibration.json"), reverse=True):
+    for run_dir in iter_run_dirs(reports_dir):
+        cal_file = run_dir / "calibration.json"
+        if not cal_file.exists():
+            continue
         try:
             results.append(json.loads(cal_file.read_text(encoding="utf-8")))
         except Exception:
@@ -363,8 +377,9 @@ def load_all_calibrations(reports_dir: Path) -> list[dict]:
 
 def list_uncalibrated_runs(reports_dir: Path) -> list[Path]:
     """Return screening dirs that have a screening_table.md but no calibration.json."""
-    out = []
-    for d in sorted(reports_dir.glob("screening_*/")):
-        if d.is_dir() and (d / "screening_table.md").exists() and not (d / "calibration.json").exists():
-            out.append(d)
-    return out
+    from tradingagents.reports_layout import iter_run_dirs
+
+    return [
+        d for d in iter_run_dirs(reports_dir)
+        if (d / "screening_table.md").exists() and not (d / "calibration.json").exists()
+    ]

@@ -15,9 +15,9 @@ from rich.rule import Rule
 from rich.table import Table
 
 from tradingagents.default_config import DEFAULT_CONFIG
-from tradingagents.graph.trading_graph import TradingAgentsGraph
-from tradingagents.allocation import AllocationLayer
-from tradingagents.allocation.layer import build_advisor_llms, parse_allocation
+from tradingagents.allocation.layer import parse_allocation
+from tradingagents.screening_table import write_screening_table
+from cli.commands.screen import run_allocation
 from cli.utils import (
     select_llm_provider, select_deep_thinking_agent,
     ask_gemini_thinking_config, ask_openai_reasoning_effort, ask_anthropic_effort,
@@ -37,17 +37,13 @@ def allocate(
     screening_table.md, then runs allocation. Useful when combining tickers
     from multiple sessions or correcting a bad table.
     """
-    reports_dir = Path("reports")
-
     if dir:
         screening_dir = Path(dir)
     else:
-        candidates = sorted(
-            [d for d in reports_dir.glob("screening_*/") if d.is_dir()],
-            reverse=True,
-        )
+        from tradingagents.reports_layout import iter_run_dirs
+        candidates = iter_run_dirs()
         if not candidates:
-            console.print("[red]No screening_* directories found in reports/.[/red]")
+            console.print("[red]No screening runs found in reports/earnings/.[/red]")
             raise typer.Exit(1)
 
         console.print("\n[bold]Select a screening directory:[/bold]\n")
@@ -145,21 +141,10 @@ def allocate(
         from datetime import date as _date
         trade_date = str(_date.today())
 
-    depth_label = "Rescreened"
-    table_lines = [
-        f"# Earnings Screener — {depth_label} — {trade_date}\n\n",
-        "| # | Ticker | Sector | Earnings | Beat | Guidance | Setup | Total | Signal | Confidence | One-liner |\n",
-        "|---|--------|--------|----------|------|----------|-------|-------|--------|------------|-----------|\n",
-    ]
-    for i, r in enumerate(sorted_results, 1):
-        table_lines.append(
-            f"| {i} | {r['ticker']} | {r.get('sector','Unknown')} | {r.get('earnings_date','?')} "
-            f"| {r.get('beat_score',0):+d} | {r.get('guidance_score',0):+d} "
-            f"| {r.get('setup_score',0):+d} | {r.get('total_score',0):+d} "
-            f"| {r.get('signal','?')} | {r.get('confidence','?')} "
-            f"| {r.get('one_liner','')} |\n"
-        )
-    (screening_dir / "screening_table.md").write_text("".join(table_lines), encoding="utf-8")
+    write_screening_table(
+        sorted_results, screening_dir / "screening_table.md",
+        f"# Earnings Screener — Rescreened — {trade_date}",
+    )
     console.print(f"[green]✓ screening_table.md rebuilt[/green] ({len(sorted_results)} tickers)\n")
 
     def sc(n: int) -> str:
@@ -196,14 +181,9 @@ def allocate(
     console.print(Rule("[bold magenta]Allocation Manager — AI Council[/bold magenta]"))
     allocation_report = None
     try:
-        ta_alloc = TradingAgentsGraph(debug=False, config=config)
-        alloc_layer = AllocationLayer(llm=ta_alloc.deep_thinking_llm, budget=budget, advisor_llms=build_advisor_llms(config))
-        allocation_report = alloc_layer.allocate(
-            results=sorted_results,
-            trade_date=trade_date,
-            screening_dir=screening_dir,
-            save=True,
-            progress_cb=lambda msg: console.print(f"  [dim]{msg}[/dim]"),
+        allocation_report = run_allocation(
+            sorted_results, trade_date, screening_dir, budget, config,
+            progress=lambda msg: console.print(f"  [dim]{msg}[/dim]"),
         )
     except Exception as exc:
         console.print(f"[red]Allocation Manager error: {exc}[/red]")

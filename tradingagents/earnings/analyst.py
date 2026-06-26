@@ -83,6 +83,7 @@ Key reminders:
 - **Beat quality checklist**: a beat driven by cost-cutting or one‑time items, accompanied by declining revenue, shrinking margins, or rising debt, is a bearish signal. A beat with accelerating revenue and expanding margins is genuinely bullish.
 - **Guidance sensitivity**: high‑multiple growth stocks often drop sharply on cautious forward commentary even after a beat. When the company faces tough comps, macro headwinds (tariffs, forex), or decelerating user growth, assume guidance will disappoint and weight that in your guidance_score.
 - **Insider & institutional flow**: check the recent news and fundamentals reports for insider selling or large institutional disposals. Significant selling before the print is a strong contra‑indicator for a pre‑earnings long.
+- **Peer read-through**: weigh the PEER READ-THROUGH data heavily, especially in clustered industries (semis, solar, autos, restaurants, miners, payments). Peers beating and guiding up on a shared driver is a tailwind (raise guidance_score / setup_score); peers missing on that driver is a headwind (penalise both). **Beat-and-still-fall is the most dangerous pattern**: if same-sector peers *beat and still closed red*, the sector bar is elevated regardless of this name — downgrade conviction one notch (lower setup_score and the pre-earnings position confidence) even when you still expect a beat.
 
 ---
 """
@@ -121,6 +122,9 @@ Historical Beat / Miss Record:
 Analyst Rating Changes (last {news_lookback_days} days):
 {analyst_ratings}
 
+PEER READ-THROUGH (industry peers that already reported this season):
+{peer_readthrough}
+
 Recent News (last {news_lookback_days} days):
 {recent_news}
 
@@ -155,6 +159,7 @@ def create_earnings_analyst(llm, ticker: str, trade_date: str):
                     revenue_estimates=earnings_context.get("revenue_estimates", "Not available"),
                     earnings_history=earnings_context.get("earnings_history", "Not available"),
                     analyst_ratings=earnings_context.get("analyst_ratings", "No recent changes"),
+                    peer_readthrough=earnings_context.get("peer_readthrough", "Not available"),
                     recent_news=earnings_context.get("recent_news", "Not available"),
                     news_lookback_days=earnings_context.get("news_lookback_days", 90),
                 ),

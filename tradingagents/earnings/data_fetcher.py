@@ -7,6 +7,7 @@ import yfinance as yf
 
 from tradingagents.dataflows.stockstats_utils import yf_retry
 from tradingagents.dataflows.yfinance_news import get_news_yfinance
+from tradingagents.earnings.peers import build_peer_readthrough, format_peer_readthrough
 
 
 def _safe(fn, fallback="Not available"):
@@ -72,6 +73,15 @@ def fetch_earnings_context(ticker: str, analysis_date: str, news_lookback_days: 
 
     analyst_ratings = _safe(_analyst_ratings)
 
+    # --- Peer earnings read-through (#9) ---
+    # Industry peers that already reported this season — the strongest free signal.
+    def _peers():
+        as_of = datetime.strptime(analysis_date, "%Y-%m-%d").date()
+        return build_peer_readthrough(ticker, today=as_of)
+
+    peer_data = _safe(_peers, fallback={})
+    peer_readthrough = format_peer_readthrough(peer_data) if peer_data else "Not available"
+
     # --- News (configurable lookback window) ---
     lookback_start = (
         datetime.strptime(analysis_date, "%Y-%m-%d") - timedelta(days=news_lookback_days)
@@ -87,6 +97,8 @@ def fetch_earnings_context(ticker: str, analysis_date: str, news_lookback_days: 
         "revenue_estimates": revenue_estimates,
         "earnings_history": earnings_history,
         "analyst_ratings": analyst_ratings,
+        "peer_readthrough": peer_readthrough,
+        "peer_data": peer_data,
         "recent_news": recent_news,
         "news_lookback_days": news_lookback_days,
     }

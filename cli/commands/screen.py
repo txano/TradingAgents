@@ -15,6 +15,8 @@ from rich.rule import Rule
 from rich.table import Table
 
 from tradingagents.default_config import DEFAULT_CONFIG
+from tradingagents.reports_layout import iter_run_dirs, runs_root
+from tradingagents.screening_table import write_screening_table
 from tradingagents.graph.trading_graph import TradingAgentsGraph
 from tradingagents.earnings import EarningsLayer
 from tradingagents.allocation import AllocationLayer
@@ -27,9 +29,126 @@ from cli.utils import (
     select_research_depth, ask_gemini_thinking_config, ask_openai_reasoning_effort,
     ask_anthropic_effort, get_analysis_date,
 )
-from cli.commands.common import _fetch_sector, save_report_to_disk
+from cli.commands.common import _fetch_sector, gather_api_keys, save_report_to_disk
 
 console = Console()
+
+_DEFAULT_ANALYSTS = ["market", "social", "news", "fundamentals"]
+
+
+def screen_ticker(
+    ticker: str,
+    trade_date: str,
+    ticker_dir: "Path",
+    config: dict,
+    analysts: "list | None" = None,
+    log=None,
+) -> dict:
+    """Run the full per-ticker screen and persist every artifact; return a result dict.
+
+    Saves, into ``ticker_dir``: the complete LangGraph report + team folders
+    (`save_report_to_disk`), `earnings_brief.md` + `fundamentals_score.json` +
+    `peers.json` (via `EarningsLayer.analyze_and_score`), and the
+    `pricing.json` / `asymmetry.json` / `crowding.json` gate artifacts.
+
+    Never raises — returns an ERROR result dict on failure. This is the single
+    source of truth for per-ticker screening, shared by the CLI ``screen`` command
+    and the dashboard server so the two can never drift on which artifacts get
+    written. ``log`` is an optional ``callable(str)`` for a mid-run progress line.
+    """
+    ticker_dir = Path(ticker_dir)
+    ticker_dir.mkdir(parents=True, exist_ok=True)
+    sector = _fetch_sector(ticker)
+    try:
+        ta = TradingAgentsGraph(analysts or _DEFAULT_ANALYSTS, debug=False, config=config)
+        final_state, decision = ta.propagate(ticker, trade_date)
+        save_report_to_disk(final_state, ticker, ticker_dir)
+
+        layer = EarningsLayer(llm=ta.deep_thinking_llm, news_lookback_days=90)
+        brief, score = layer.analyze_and_score(
+            ticker, trade_date, final_state, save_dir=str(ticker_dir)
+        )
+        if log:
+            log(f"[{ticker}] Fundamentals: {score.get('fundamentals_score', 0):+d}/5 "
+                f"({score.get('bs_quality', '?')})")
+
+        # Gate artifacts (#14) — each individually guarded so one failure never
+        # blocks the others or the screen.
+        pricing = None
+        try:
+            pricing = fetch_pricing_context(ticker, score.get("earnings_date"))
+            (ticker_dir / "pricing.json").write_text(json.dumps(pricing, indent=2), encoding="utf-8")
+        except Exception:
+            pass
+        try:
+            asym = build_asymmetry(
+                ticker,
+                beat_score=score.get("beat_score"),
+                implied_move_pct=(pricing or {}).get("implied_move_pct"),
+            )
+            (ticker_dir / "asymmetry.json").write_text(json.dumps(asym, indent=2), encoding="utf-8")
+        except Exception:
+            pass
+        try:
+            crowding = fetch_crowding(ticker, sector=sector)
+            (ticker_dir / "crowding.json").write_text(json.dumps(crowding, indent=2), encoding="utf-8")
+        except Exception:
+            pass
+
+        return {
+            "ticker":               ticker,
+            "sector":               sector,
+            "ta_decision":          decision,
+            "brief":                brief,
+            "earnings_date":        score.get("earnings_date", "unknown"),
+            "beat_score":           score.get("beat_score", 0),
+            "guidance_score":       score.get("guidance_score", 0),
+            "setup_score":          score.get("setup_score", 0),
+            "total_score":          score.get("total_score", 0),
+            "signal":               score.get("signal", "?"),
+            "confidence":           score.get("confidence", "?"),
+            "one_liner":            score.get("one_liner", ""),
+            "fundamentals_score":   score.get("fundamentals_score", 0),
+            "bs_quality":           score.get("bs_quality", "Adequate"),
+            "margin_trend":         score.get("margin_trend", "Stable"),
+            "growth_quality":       score.get("growth_quality", "Medium"),
+            "fundamentals_summary": score.get("fundamentals_summary", ""),
+        }
+    except Exception as exc:
+        return {
+            "ticker": ticker, "sector": sector, "ta_decision": "ERROR", "brief": "",
+            "earnings_date": "unknown", "beat_score": 0, "guidance_score": 0,
+            "setup_score": 0, "total_score": -99, "signal": "ERROR",
+            "confidence": "—", "one_liner": str(exc),
+        }
+
+
+def run_allocation(
+    results: list[dict],
+    trade_date: str,
+    screening_dir: "Path",
+    budget: int,
+    config: dict,
+    analysts: "list | None" = None,
+    progress=None,
+    save: bool = True,
+) -> str:
+    """Run the AI Council allocation over screened results; return the report markdown.
+
+    Builds the deep-thinking LLM (via a `TradingAgentsGraph`) and the per-advisor
+    models from `config`, then runs `AllocationLayer.allocate`. Single source of
+    truth for the allocation invocation shared by the CLI `screen`/`allocate`
+    commands and the dashboard server. Callers handle their own error display.
+    """
+    ta_alloc = TradingAgentsGraph(analysts or _DEFAULT_ANALYSTS, debug=False, config=config)
+    alloc_layer = AllocationLayer(
+        llm=ta_alloc.deep_thinking_llm, budget=budget,
+        advisor_llms=build_advisor_llms(config),
+    )
+    return alloc_layer.allocate(
+        results=results, trade_date=trade_date, screening_dir=screening_dir,
+        save=save, progress_cb=progress,
+    )
 
 
 def run_screening(budget: int = 100_000, tickers_prefill: "list[str] | None" = None) -> None:
@@ -104,32 +223,15 @@ def run_screening(budget: int = 100_000, tickers_prefill: "list[str] | None" = N
     config["openai_reasoning_effort"] = reasoning_effort
     config["anthropic_effort"]        = anthropic_effort
 
-    import os
-    _PROVIDER_KEY_ENV = {
-        "deepseek":   "DEEPSEEK_API_KEY",
-        "xai":        "XAI_API_KEY",
-        "openrouter": "OPENROUTER_API_KEY",
-        "qwen":       "DASHSCOPE_API_KEY",
-        "glm":        "ZHIPU_API_KEY",
-        "openai":     "OPENAI_API_KEY",
-        "anthropic":  "ANTHROPIC_API_KEY",
-    }
-    _base_env = _PROVIDER_KEY_ENV.get(provider_lower, "")
-    _api_keys: list[str] = []
-    if _base_env:
-        for _suffix in ["", "_2", "_3", "_4", "_5", "_6", "_7", "_8"]:
-            _k = os.environ.get(_base_env + _suffix, "").strip()
-            if _k and _k not in _api_keys:
-                _api_keys.append(_k)
+    _api_keys = gather_api_keys(provider_lower)
 
     # Resume: check for an existing screening folder for this date
     screening_dir = None
     completed_tickers: set[str] = set()
-    existing_runs = sorted(
-        Path("reports").glob(f"screening_{trade_date}_*/"),
-        key=lambda p: p.name,
-        reverse=True,
-    )
+    existing_runs = [
+        d for d in iter_run_dirs()
+        if d.name.startswith(f"screening_{trade_date}_")
+    ]
     if existing_runs:
         console.print(f"\n[yellow]Found {len(existing_runs)} existing screening run(s) for {trade_date}:[/yellow]")
         for i, p in enumerate(existing_runs[:5], 1):
@@ -158,7 +260,7 @@ def run_screening(budget: int = 100_000, tickers_prefill: "list[str] | None" = N
 
     if screening_dir is None:
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        screening_dir = Path("reports") / f"screening_{trade_date}_{timestamp}"
+        screening_dir = runs_root() / f"screening_{trade_date}_{timestamp}"
 
     screening_dir.mkdir(parents=True, exist_ok=True)
     console.print(f"[dim]Saving to:[/dim] {screening_dir.resolve()}\n")
@@ -234,61 +336,10 @@ def run_screening(budget: int = 100_000, tickers_prefill: "list[str] | None" = N
 
     def process(ticker: str, worker_config: dict) -> None:
         ticker_dir = screening_dir / ticker
-        ticker_dir.mkdir(exist_ok=True)
-        sector = _fetch_sector(ticker)
-        try:
-            ta = TradingAgentsGraph(debug=False, config=worker_config)
-            final_state, decision = ta.propagate(ticker, trade_date)
-            save_report_to_disk(final_state, ticker, ticker_dir)
-            layer = EarningsLayer(llm=ta.deep_thinking_llm, news_lookback_days=90)
-            brief, score = layer.analyze_and_score(ticker, trade_date, final_state, save_dir=str(ticker_dir))
-            console.print(f"  [dim][{ticker}] Fundamentals: {score.get('fundamentals_score', 0):+d}/5 ({score.get('bs_quality', '?')})[/dim]")
-            pricing = None
-            try:
-                pricing = fetch_pricing_context(ticker, score.get("earnings_date"))
-                (ticker_dir / "pricing.json").write_text(json.dumps(pricing, indent=2), encoding="utf-8")
-            except Exception:
-                pass
-            try:
-                asym = build_asymmetry(
-                    ticker,
-                    beat_score=score.get("beat_score"),
-                    implied_move_pct=(pricing or {}).get("implied_move_pct"),
-                )
-                (ticker_dir / "asymmetry.json").write_text(json.dumps(asym, indent=2), encoding="utf-8")
-            except Exception:
-                pass
-            try:
-                crowding = fetch_crowding(ticker, sector=sector)
-                (ticker_dir / "crowding.json").write_text(json.dumps(crowding, indent=2), encoding="utf-8")
-            except Exception:
-                pass
-            result = {
-                "ticker":       ticker,
-                "sector":       sector,
-                "ta_decision":  decision,
-                "brief":        brief,
-                "earnings_date":        score.get("earnings_date", "unknown"),
-                "beat_score":           score.get("beat_score", 0),
-                "guidance_score":       score.get("guidance_score", 0),
-                "setup_score":          score.get("setup_score", 0),
-                "total_score":          score.get("total_score", 0),
-                "signal":               score.get("signal", "?"),
-                "confidence":           score.get("confidence", "?"),
-                "one_liner":            score.get("one_liner", ""),
-                "fundamentals_score":   score.get("fundamentals_score", 0),
-                "bs_quality":           score.get("bs_quality", "Adequate"),
-                "margin_trend":         score.get("margin_trend", "Stable"),
-                "growth_quality":       score.get("growth_quality", "Medium"),
-                "fundamentals_summary": score.get("fundamentals_summary", ""),
-            }
-        except Exception as exc:
-            result = {
-                "ticker": ticker, "sector": sector, "ta_decision": "ERROR", "brief": "",
-                "earnings_date": "unknown", "beat_score": 0, "guidance_score": 0,
-                "setup_score": 0, "total_score": -99, "signal": "ERROR",
-                "confidence": "—", "one_liner": str(exc),
-            }
+        result = screen_ticker(
+            ticker, trade_date, ticker_dir, worker_config,
+            log=lambda m: console.print(f"  [dim]{m}[/dim]"),
+        )
         with results_lock:
             results.append(result)
             n = len(results)
@@ -362,33 +413,18 @@ def run_screening(budget: int = 100_000, tickers_prefill: "list[str] | None" = N
         )
     console.print(table)
 
-    table_lines = [
-        f"# Earnings Screener — {depth_label} — {trade_date}\n\n",
-        "| # | Ticker | Sector | Earnings | Beat | Guidance | Setup | Total | Signal | Confidence | One-liner |\n",
-        "|---|--------|--------|----------|------|----------|-------|-------|--------|------------|-----------|\n",
-    ]
-    for i, r in enumerate(sorted_results, 1):
-        table_lines.append(
-            f"| {i} | {r['ticker']} | {r.get('sector','Unknown')} | {r.get('earnings_date','?')} "
-            f"| {r.get('beat_score',0):+d} | {r.get('guidance_score',0):+d} "
-            f"| {r.get('setup_score',0):+d} | {r.get('total_score',0):+d} "
-            f"| {r.get('signal','?')} | {r.get('confidence','?')} "
-            f"| {r.get('one_liner','')} |\n"
-        )
-    (screening_dir / "screening_table.md").write_text("".join(table_lines), encoding="utf-8")
+    write_screening_table(
+        sorted_results, screening_dir / "screening_table.md",
+        f"# Earnings Screener — {depth_label} — {trade_date}",
+    )
 
     console.print()
     console.print(Rule("[bold magenta]Allocation Manager — AI Council[/bold magenta]"))
     allocation_report = None
     try:
-        ta_alloc = TradingAgentsGraph(debug=False, config=config)
-        alloc_layer = AllocationLayer(llm=ta_alloc.deep_thinking_llm, budget=budget, advisor_llms=build_advisor_llms(config))
-        allocation_report = alloc_layer.allocate(
-            results=sorted_results,
-            trade_date=trade_date,
-            screening_dir=screening_dir,
-            save=True,
-            progress_cb=lambda msg: console.print(f"  [dim]{msg}[/dim]"),
+        allocation_report = run_allocation(
+            sorted_results, trade_date, screening_dir, budget, config,
+            progress=lambda msg: console.print(f"  [dim]{msg}[/dim]"),
         )
     except Exception as exc:
         console.print(f"[red]Allocation Manager error: {exc}[/red]")

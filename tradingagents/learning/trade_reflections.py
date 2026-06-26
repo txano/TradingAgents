@@ -20,10 +20,12 @@ def find_analysis_for_ticker(reports_dir: Path, ticker: str) -> list[Path]:
     candidates: list[Path] = []
     if not reports_dir.exists():
         return candidates
+    from tradingagents.reports_layout import iter_run_dirs
+
     for folder in reports_dir.glob(f"{ticker}_*/"):
         if folder.is_dir() and (folder / "complete_report.md").exists():
             candidates.append(folder)
-    for screening_dir in reports_dir.glob("screening_*/"):
+    for screening_dir in iter_run_dirs(reports_dir):
         ticker_dir = screening_dir / ticker
         if ticker_dir.is_dir():
             candidates.append(ticker_dir)
@@ -194,8 +196,9 @@ def reflect_all(
 
         screening_run = None
         if analysis_path:
+            from tradingagents.reports_layout import RUN_PREFIXES
             for parent in Path(analysis_path).parents:
-                if parent.name.startswith("screening_"):
+                if parent.name.startswith(RUN_PREFIXES):
                     screening_run = str(parent)
                     break
         if not screening_run:

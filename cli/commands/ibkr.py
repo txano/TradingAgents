@@ -15,8 +15,47 @@ from rich.rule import Rule
 from rich.table import Table
 
 from cli.commands.common import _fetch_sector, _trades_path
+from tradingagents.trade_log import backfill as _backfill_trades, ensure_v2
 
 console = Console()
+
+# When a trade's entry (purchase) date is unknown, the screened-within gate falls
+# back to this wider window measured from the exit date.
+_EXIT_FALLBACK_DAYS = 30
+
+
+def _screened_within(trade: dict, days: int, reports_dir: Path) -> bool:
+    """True if the ticker was screened within `days` before it was purchased.
+
+    Uses the entry (open) date when available and requires a screening run dated
+    within `days` before it. When the entry date is unknown (not in the Flex
+    record), falls back to requiring a screen within max(days, 30) before the
+    exit date. Either way the screen must *predate* the trade.
+    """
+    import datetime as _dt
+    from tradingagents.trade_log import _run_date, find_screening_run
+
+    ticker = trade.get("ticker", "")
+    entry = trade.get("entry_date") or ""
+    exit_ = trade.get("exit_date") or ""
+    if entry:
+        ref, window = entry, days
+    elif exit_:
+        ref, window = exit_, max(days, _EXIT_FALLBACK_DAYS)
+    else:
+        return False
+
+    ticker_dir = find_screening_run(ticker, ref, reports_dir)
+    if ticker_dir is None:
+        return False
+    run_date = _run_date(ticker_dir.parent.name)
+    if not run_date:
+        return False
+    try:
+        delta = (_dt.date.fromisoformat(ref) - _dt.date.fromisoformat(run_date)).days
+    except ValueError:
+        return False
+    return 0 <= delta <= window
 
 
 def _get_analyzed_tickers(reports_dir: Path) -> "dict[str, str]":
@@ -143,6 +182,14 @@ def _get_analyzed_tickers(reports_dir: Path) -> "dict[str, str]":
 def import_ibkr(
     file: Optional[str] = typer.Option(None, "--file", "-f", help="Path to a downloaded Flex XML report (skips API call)"),
     all_trades: bool = typer.Option(False, "--all", help="Import all trades, not just TradingAgents-analyzed tickers"),
+    query_id: Optional[str] = typer.Option(None, "--query-id", help="Override IBKR_FLEX_QUERY_ID (e.g. a lighter, shorter-range query)"),
+    debug: bool = typer.Option(False, "--debug", help="Print the raw IBKR Flex responses for troubleshooting"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip the confirmation prompt — auto-import (for cron/automation)"),
+    screened_within: Optional[int] = typer.Option(
+        None, "--screened-within",
+        help="Only import trades whose ticker was screened within N days before purchase "
+             "(entry date; falls back to within ~30 days before exit when entry is unknown)",
+    ),
 ):
     """Import closed trades from IBKR.
 
@@ -171,7 +218,7 @@ def import_ibkr(
         console.print(f"[dim]Reading: {xml_path.resolve()}[/dim]\n")
     else:
         token    = os.environ.get("IBKR_FLEX_TOKEN", "").strip()
-        query_id = os.environ.get("IBKR_FLEX_QUERY_ID", "").strip()
+        query_id = (query_id or os.environ.get("IBKR_FLEX_QUERY_ID", "")).strip()
 
         if not token or not query_id:
             console.print(Panel(
@@ -190,57 +237,96 @@ def import_ibkr(
             ))
             return
 
-        console.print("[dim]Connecting to IBKR Flex Web Service...[/dim]")
-        with console.status("[bold yellow]Downloading report (retries automatically on server busy errors — up to ~2 min)...[/bold yellow]"):
-            try:
-                xml_str = download_flex_xml(token, query_id)
-            except Exception as exc:
-                console.print(f"[red]Download failed: {exc}[/red]")
-                return
+        console.print(f"[dim]Connecting to IBKR Flex Web Service (query {query_id})...[/dim]")
+        dbg = (lambda m: console.print(f"[dim cyan]IBKR ▸ {m}[/dim cyan]")) if debug else None
+
+        def _download():
+            # In debug mode print plainly (no spinner) so the raw responses are readable.
+            if debug:
+                return download_flex_xml(
+                    token, query_id,
+                    progress=lambda m: console.print(f"[dim]{m}[/dim]"), debug=dbg,
+                )
+            with console.status("[bold yellow]Requesting report from IBKR…[/bold yellow]") as status:
+                return download_flex_xml(
+                    token, query_id,
+                    progress=lambda m: status.update(f"[bold yellow]{m}[/bold yellow]"),
+                )
+
+        try:
+            xml_str = _download()
+        except Exception as exc:
+            console.print(f"[red]Download failed: {exc}[/red]")
+            console.print(
+                "[dim]Tips:[/dim]\n"
+                "  [dim]• Re-run with[/dim] [bold]--debug[/bold] [dim]to see exactly what IBKR returned.[/dim]\n"
+                "  [dim]• If the query is large, set a shorter date range (e.g. Last 30 Days) in the IBKR "
+                "portal, or point at a lighter query with[/dim] [bold]--query-id <id>[/bold][dim]. "
+                "Duplicate trades are skipped on import, so a short rolling window is enough.[/dim]\n"
+                "  [dim]• Or download the XML manually and run:[/dim] "
+                "[bold]uv run tradingagents import-ibkr --file path/to/report.xml[/bold]"
+            )
+            # Non-zero exit so a scheduled (systemd/cron) run is flagged as failed.
+            # Note: with a 30-day query and a 15-day cadence the next run still
+            # covers this window (dedup prevents duplicates), so a single failure
+            # is self-healing.
+            raise typer.Exit(code=1)
 
     try:
         ibkr_trades = parse_closing_trades(xml_str)
     except Exception as exc:
         console.print(f"[red]Parse error: {exc}[/red]")
-        return
+        raise typer.Exit(code=1)
 
     if not ibkr_trades:
         console.print("[yellow]No closing stock trades found in the report.[/yellow]")
         return
 
     if not all_trades:
-        analyzed = _get_analyzed_tickers(Path("reports"))
         before = len(ibkr_trades)
 
-        if analyzed:
+        if screened_within is not None:
+            # Strict gate: ticker must have been screened within N days before purchase.
             console.print(
-                f"[dim]Filtering to {len(analyzed)} TradingAgents-analyzed ticker(s): "
-                f"{', '.join(sorted(analyzed)[:10])}"
-                f"{'…' if len(analyzed) > 10 else ''}[/dim]"
+                f"[dim]Gating to trades screened within {screened_within} day(s) before purchase "
+                f"(entry date; ≤{max(screened_within, _EXIT_FALLBACK_DAYS)}d before exit when entry is unknown).[/dim]"
             )
+            _reports = Path("reports")
+            ibkr_trades = [t for t in ibkr_trades if _screened_within(t, screened_within, _reports)]
+            reason = "no qualifying screen within the window before purchase"
         else:
-            console.print(
-                "[yellow]No TradingAgents analysis reports found in reports/ "
-                "(screening dirs may be zipped or missing). "
-                "Importing all trades — use --all to suppress this notice.[/yellow]\n"
-            )
+            analyzed = _get_analyzed_tickers(Path("reports"))
+            if analyzed:
+                console.print(
+                    f"[dim]Filtering to {len(analyzed)} TradingAgents-analyzed ticker(s): "
+                    f"{', '.join(sorted(analyzed)[:10])}"
+                    f"{'…' if len(analyzed) > 10 else ''}[/dim]"
+                )
+            else:
+                console.print(
+                    "[yellow]No TradingAgents analysis reports found in reports/ "
+                    "(screening dirs may be zipped or missing). "
+                    "Importing all trades — use --all to suppress this notice.[/yellow]\n"
+                )
 
-        def _should_import(t: dict) -> bool:
-            if not analyzed:
-                return True  # nothing to filter against — import all
-            ticker = t.get("ticker", "")
-            analysis_date = analyzed.get(ticker)
-            if analysis_date is None:
-                return False
-            exit_date = t.get("exit_date", "")
-            return bool(exit_date) and exit_date >= analysis_date
+            def _should_import(t: dict) -> bool:
+                if not analyzed:
+                    return True  # nothing to filter against — import all
+                ticker = t.get("ticker", "")
+                analysis_date = analyzed.get(ticker)
+                if analysis_date is None:
+                    return False
+                exit_date = t.get("exit_date", "")
+                return bool(exit_date) and exit_date >= analysis_date
 
-        ibkr_trades = [t for t in ibkr_trades if _should_import(t)]
+            ibkr_trades = [t for t in ibkr_trades if _should_import(t)]
+            reason = "ticker not analyzed by TradingAgents, or traded before analysis date"
+
         filtered_out = before - len(ibkr_trades)
         if filtered_out:
             console.print(
-                f"[dim]Filtered out {filtered_out} trade(s) (ticker not analyzed by TradingAgents, "
-                f"or traded before analysis date). Use --all to import everything.[/dim]\n"
+                f"[dim]Filtered out {filtered_out} trade(s) ({reason}). "
+                f"Use --all to import everything.[/dim]\n"
             )
         if not ibkr_trades:
             console.print("[yellow]No trades remain after filtering. Use --all to import everything.[/yellow]")
@@ -304,12 +390,15 @@ def import_ibkr(
             t.get("currency", "USD"),
         )
     console.print(prev)
-
     console.print()
-    confirm = typer.prompt("Import these trades into trades.json?", default="Y").strip().upper()
-    if confirm not in ("Y", "YES", ""):
-        console.print("[yellow]Import cancelled.[/yellow]")
-        return
+
+    if yes:
+        console.print("[dim]--yes given — importing without confirmation.[/dim]")
+    else:
+        confirm = typer.prompt("Import these trades into trades.json?", default="Y").strip().upper()
+        if confirm not in ("Y", "YES", ""):
+            console.print("[yellow]Import cancelled.[/yellow]")
+            return
 
     now = datetime.datetime.now().isoformat()
     added = 0
@@ -330,7 +419,7 @@ def import_ibkr(
             "beat_prediction_correct": None,
             "guidance_prediction_correct": None,
             "key_lesson":              "",
-            "trade_date":              None,
+            "trade_date":              t.get("entry_date") or None,
             "exit_date":               t["exit_date"],
             "screening_run":           None,
             "analysis_path":           None,
@@ -341,6 +430,7 @@ def import_ibkr(
             "ibkr_exec_id":            t.get("ibkr_exec_id"),
             "logged_at":               now,
         }
+        ensure_v2(entry)  # schema-v2 fields (null); 'backfill-trades' fills them
         existing_trades.append(entry)
         added += 1
 
@@ -350,3 +440,48 @@ def import_ibkr(
         "[dim]Note: trade_date (entry date) is not available from the Flex closing record. "
         "Run 'reflect' on any trade to add full analysis context.[/dim]\n"
     )
+
+
+def backfill_trades(
+    no_network: bool = typer.Option(
+        False, "--no-network", help="Artifact-only pass (skip the yfinance outcome/reaction fetch)"
+    ),
+    ticker: Optional[str] = typer.Option(
+        None, "--ticker", "-t", help="Only enrich this ticker"
+    ),
+):
+    """Backfill the schema-v2 context/outcome/reaction fields on trades.json (#17).
+
+    Links each trade to the screening run it came from and fills T-1 context
+    (implied move, run-up, 52w distance, revision direction, coverage) from the
+    saved pricing/crowding/asymmetry artifacts, plus the realised outcome and
+    day-1/5/20 reaction from yfinance. Idempotent — safe to re-run any time.
+    """
+    console.print()
+    console.print(Rule("[bold cyan]Trade-log Backfill (schema v2)[/bold cyan]"))
+    console.print()
+
+    trade_log_path = _trades_path()
+    if not trade_log_path.exists():
+        console.print("[yellow]No trades.json found — nothing to backfill.[/yellow]")
+        return
+    try:
+        trades = _json.loads(trade_log_path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        console.print(f"[red]Could not read {trade_log_path}: {exc}[/red]")
+        return
+
+    tickers = {ticker.upper()} if ticker else None
+    with console.status("[bold yellow]Enriching trades…[/bold yellow]"):
+        summary = _backfill_trades(
+            trades, reports_dir=Path("reports"),
+            with_network=not no_network, tickers=tickers,
+        )
+
+    trade_log_path.write_text(_json.dumps(trades, indent=2), encoding="utf-8")
+    console.print(
+        f"[green]✓ Backfilled {summary['total']} trade(s)[/green]  "
+        f"[dim](newly linked to a screening run: {summary['newly_linked']}; "
+        f"newly filled outcome/reaction: {summary['newly_filled_outcome']})[/dim]"
+    )
+    console.print(f"[dim]→ {trade_log_path}[/dim]\n")

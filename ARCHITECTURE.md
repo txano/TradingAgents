@@ -30,7 +30,10 @@ tickers reporting earnings, it:
 
 ```
 EarningsLayer
-  └── data_fetcher.py       fetch raw EPS estimates, price history, news
+  └── data_fetcher.py       fetch raw EPS estimates, price history, news, peer read-through
+  └── peers.py              peer earnings read-through (#9): curated PEER_MAP →
+                            EPS surprise + day-1 reaction for peers reported in ~35d,
+                            beat-and-still-fall (sector_bar_elevated) flag
   └── analyst.py            LLM generates the pre-earnings brief
   └── scorer.py             extracts beat/guidance/setup scores from the brief
 
@@ -59,7 +62,14 @@ LearningLayer (tradingagents/learning/)
                             ~/.tradingagents/lessons_cache.md, digest-invalidated)
 ```
 
-Output per ticker (saved to `reports/screening_YYYY-MM-DD_TIMESTAMP/TICKER/`):
+Batch screening runs are written under `reports/earnings/` and named
+`screening_YYYY-MM-DD_TIMESTAMP` (plain screen) or `earnings_YYYY-MM-DD_TIMESTAMP`
+(calendar-driven). `tradingagents/reports_layout.py` is the single source of truth
+for this location: `runs_root()` returns the write dir, `iter_run_dirs()` lists all
+runs (both prefixes, newest-first, including legacy repo-root runs). Both the CLI
+`screen` command and the dashboard server write here via the shared `screen_ticker()`.
+
+Output per ticker (saved to `reports/earnings/{screening,earnings}_YYYY-MM-DD_TIMESTAMP/TICKER/`):
 
 | File | Contents |
 |------|----------|
@@ -69,10 +79,11 @@ Output per ticker (saved to `reports/screening_YYYY-MM-DD_TIMESTAMP/TICKER/`):
 | `pricing.json` | Spot, market cap, fwd P/E, 52w position, implied earnings move |
 | `asymmetry.json` | Historical E[move\|beat], E[move\|miss], fade rate, coverage ratio, EV of a long |
 | `crowding.json` | Run-up (1m/3m, vs sector ETF), distance from 52w high, EPS-revision momentum |
+| `peers.json` | Peer earnings read-through (#9): peers reported in last ~35d, EPS surprise + day-1 reaction, `sector_bar_elevated` (beat-and-still-fall) flag |
 | `complete_report.md` | Full LangGraph multi-agent report |
 | `1_analysts/` … `5_portfolio/` | Per-team agent outputs |
 
-Output per screening run (saved to `reports/screening_YYYY-MM-DD_TIMESTAMP/`):
+Output per screening run (saved to `reports/earnings/{screening,earnings}_YYYY-MM-DD_TIMESTAMP/`):
 
 | File | Contents |
 |------|----------|
@@ -206,6 +217,11 @@ Payoff-asymmetry & crowding gates (#14, in `validator.py` + synthesis prompt):
 - Gate thresholds are tunable constants in `validator.py` / `crowding.py`, to be
   recalibrated by the backtest harness (#17) against the real trade log.
 
+Peer read-through gate (#9, soft, in the synthesis prompt + the `Peers:` ticker line):
+- A `⚠ elevated bar` tag (at least one peer **beat and still fell**) → cut conviction
+  one tier on longs in that name; peers shown missing (M) on a shared driver → lean
+  SKIP over BUY; peers beating and holding → genuine tailwind. Soft, never an auto-skip.
+
 ---
 
 ## 5. Calibration system (`tradingagents/calibration/calibrator.py`)
@@ -273,6 +289,34 @@ Each entry is one closed trade. Fields:
 | `ibkr_exec_id` | str\|null | IBKR | |
 | `logged_at` | str | system | ISO timestamp |
 
+### Schema v2 fields (#17 — `tradingagents/trade_log.py`)
+
+`ensure_v2()` stamps `schema_version: 2` and adds the fields below (null until
+filled). It runs on every IBKR import; `backfill-trades` populates the rest by
+linking each trade to its screening run (`find_screening_run`, matches both
+`screening_*` and `earnings_*` run dirs) and reading the saved artifacts +
+yfinance. All enrichment is idempotent and guarded — re-running never clobbers
+existing values or raises.
+
+| Group | Fields | Source |
+|-------|--------|--------|
+| T-1 context | `implied_move_pct` | `pricing.json` |
+| | `runup_1m_pct`, `runup_vs_sector_1m`, `dist_52w_high_pct`, `revision_direction_30d` | `crowding.json` |
+| | `short_interest_pct` | yfinance `info.shortPercentOfFloat` |
+| | `iv_rank`, `term_ratio`, `skew_25d` | **null** — owned by #3b (IBKR options) |
+| | `regime_flag` | **null** — owned by #15 |
+| Outcome | `beat_eps` | yfinance `earnings_dates` |
+| | `beat_rev`, `guide` | **null** — not auto-derivable yet |
+| Reaction | `move_d1`, `move_d5`, `move_d20` | yfinance price history around the print |
+| | `coverage_ratio` | `asymmetry.json` |
+| Management | `pnl_final` | mirrors `pnl` on close |
+| | `gate_path`, `action` | **null** — owned by #16 |
+
+> Note: historical `reports/earnings/earnings_*` runs predate the
+> `pricing/crowding/asymmetry.json` artifacts, so backfill recovers only
+> outcome/reaction/short-interest for those trades. Future screens that save the
+> artifacts are fully enrichable.
+
 ---
 
 ## 7. IBKR import (`tradingagents/ibkr/flex_client.py`)
@@ -293,23 +337,26 @@ Each entry is one closed trade. Fields:
 
 ```
 reports/
-├── calibration_master.json         ← aggregated calibration across all runs
+├── calibration_master.json         ← aggregated calibration across all runs (repo root)
 ├── calibration_master.md
-├── screening_YYYY-MM-DD_TIMESTAMP/ ← one folder per screen run
-│   ├── screening_table.md          ← ranked tickers table
-│   ├── allocation.md               ← AI Council allocation report
-│   ├── calibration.json            ← post-earnings accuracy (written by calibrate)
-│   ├── calibration.md
-│   └── TICKER/
-│       ├── earnings_brief.md       ← pre-earnings brief + score JSON
-│       ├── earnings_raw_data.json
-│       ├── fundamentals_score.json ← fundamentals quality score + metrics
-│       ├── pricing.json            ← spot / valuation / implied earnings move
-│       ├── asymmetry.json         ← historical payoff asymmetry + EV
-│       ├── crowding.json          ← run-up / 52w-high / revision momentum
-│       ├── complete_report.md
-│       └── 1_analysts/ … 5_portfolio/
-├── TICKER_YYYYMMDD_HHMMSS/         ← individual analyze runs (not from screen)
+├── earnings/                        ← canonical location for all batch screening runs
+│   └── {screening,earnings}_YYYY-MM-DD_TIMESTAMP/ ← one folder per screen run
+│       ├── screening_table.md      ← ranked tickers table
+│       ├── allocation.md           ← AI Council allocation report
+│       ├── metadata.json           ← run_type / models / run_at (dashboard runs)
+│       ├── calibration.json        ← post-earnings accuracy (written by calibrate)
+│       ├── calibration.md
+│       └── TICKER/
+│           ├── earnings_brief.md       ← pre-earnings brief + score JSON
+│           ├── earnings_raw_data.json
+│           ├── fundamentals_score.json ← fundamentals quality score + metrics
+│           ├── pricing.json            ← spot / valuation / implied earnings move
+│           ├── asymmetry.json          ← historical payoff asymmetry + EV
+│           ├── crowding.json           ← run-up / 52w-high / revision momentum
+│           ├── peers.json              ← peer earnings read-through (#9)
+│           ├── complete_report.md
+│           └── 1_analysts/ … 5_portfolio/
+├── analysis/TICKER_YYYYMMDD_HHMMSS/ ← individual analyze runs (not from screen)
 └── reflections/
     └── TICKER_YYYYMMDD_HHMMSS/     ← post-trade reflection outputs
 ```
@@ -332,12 +379,20 @@ reports/
 | `correlation` | Score-to-outcome correlation analysis |
 | `stats` | Win rate, avg P&L, beat/guidance accuracy, calibration by confidence |
 | `import-ibkr` | Import closed trades from IBKR Flex XML |
+| `backfill-trades` | Backfill schema-v2 context/outcome/reaction fields on `trades.json` (#17; `--no-network`, `--ticker`) |
 | `allocation-weights` | View or update the four scoring weights (beat / guidance / setup / fundamentals) |
 | `dashboard` | Launch local web dashboard (http://127.0.0.1:8765) |
 | `build-web` | Build the static reports website |
 
 Subcommand implementations live in `cli/commands/`; `cli/main.py` registers them and
 hosts the interactive menu (shown when no subcommand is given) plus the `analyze` flow.
+
+**Shared screening primitives (use these instead of re-implementing — the CLI `screen`/`allocate`
+commands and the dashboard `server.py` all call them, so they can't drift):**
+`screen_ticker()` and `run_allocation()` in `cli/commands/screen.py` (per-ticker run + the AI-Council
+invocation), `write_screening_table()` in `tradingagents/screening_table.py` (the one screening_table.md
+writer, kept in sync with `calibrator.parse_screening_table`), and `_fetch_sector()` / `gather_api_keys()`
+in `cli/commands/common.py`. Run locations resolve through `tradingagents/reports_layout.py`.
 
 ---
 

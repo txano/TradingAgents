@@ -104,14 +104,16 @@ def calibrate():
     """Calibrate screening predictions against actual earnings outcomes."""
     from tradingagents.calibration import calibrate_screening_run
 
+    from tradingagents.reports_layout import iter_run_dirs
+
     reports_dir = Path("reports")
     if not reports_dir.exists():
         console.print("[yellow]No reports/ directory found. Run 'screen' first.[/yellow]")
         return
 
-    all_runs = sorted(reports_dir.glob("screening_*/"), key=lambda p: p.name, reverse=True)
+    all_runs = iter_run_dirs(reports_dir)
     if not all_runs:
-        console.print("[yellow]No screening runs found in reports/.[/yellow]")
+        console.print("[yellow]No screening runs found in reports/earnings/.[/yellow]")
         return
 
     console.print()

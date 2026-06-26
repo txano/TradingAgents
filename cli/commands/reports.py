@@ -35,13 +35,10 @@ def _build_reports_data(reports_dir: Path, trades_path: Path) -> dict:
         except Exception:
             pass
 
+    from tradingagents.reports_layout import iter_run_dirs
+
     screening_runs: list = []
-    earnings_base = reports_dir / "earnings"
-    all_run_dirs = sorted(
-        list(earnings_base.glob("screening_*/")) + list(earnings_base.glob("earnings_*/")),
-        key=lambda p: p.name,
-        reverse=True,
-    ) if earnings_base.is_dir() else []
+    all_run_dirs = iter_run_dirs(reports_dir)
 
     for d in all_run_dirs:
         if not d.is_dir():

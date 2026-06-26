@@ -20,8 +20,8 @@ Items marked ⟐ are now **corroborated by the `learn` loop on real trade histor
 (2026-06-16) — the system's own post-mortems keep asking for them.
 
 1. **#14 — Expectations-Gap & Payoff-Asymmetry engine** — **DONE** (14a asymmetry engine, 14b EV hard gate + soft fade/coverage downgrade, 14c run-up/crowding gate). Open follow-ups only: better `P(beat)` via #1 calibration, and premium-selling routing via #5. ⟐ The `learn` loop already de-weighted `beat` (0.7→0.55) and rewrote the earnings prompt around beat-quality / run-up / "priced-in" — exactly this thesis.
-2. **#9 — Peer earnings read-through** (free; confirmed by the playbook as a Block-B gate)
-3. **#15 — Implied-move sizing cap + tactical regime gates** ⟐ (free; deterministic loss control; `learn` repeatedly asks for a macro risk-off overlay)
+2. **#9 — Peer earnings read-through** — **DONE** (2026-06-23, `earnings/peers.py`): curated peer map → EPS surprise + day-1 reaction for peers that reported in the last ~35d, feeding the brief prompt, a `Peers:` council line, and the beat-and-still-fall downgrade. Also shipped the **#17 log-schema-v2 prerequisite** (`trade_log.py` + `backfill-trades`).
+3. **#15 — Implied-move sizing cap + tactical regime gates** ⟐ (free; deterministic loss control; `learn` repeatedly asks for a macro risk-off overlay) ← NEXT
 4. **#10 — Post-earnings dislocation scanner** (free; a second, independent trade source)
 5. **#1 — Calibration extensions + `suggest-weights`** (turns the above into measured, self-tuning gates)
 6. **#16 — Trade management: exit map + post-earnings triage** ⟐ (high P&L leverage; the single most-repeated `learn` process note — wins closed too early; needs live position tracking)
@@ -234,21 +234,22 @@ Items marked ⟐ are now **corroborated by the `learn` loop on real trade histor
 
 ---
 
-## #9 — Peer Earnings Read-Through (HIGH priority)
+## #9 — Peer Earnings Read-Through (HIGH priority) ✅ DONE (2026-06-23) — `tradingagents/earnings/peers.py`
 
 **Goal:** When a ticker is about to report, exploit what its industry peers that *already reported this season* revealed — the single most predictive free signal the system currently ignores.
 
 ### Sub-tasks
-- [ ] Identify peers per ticker: `yfinance.Ticker.info["industry"]` + a small curated peer map for the names we trade most
-- [ ] For peers that reported in the last ~30 days, fetch: EPS surprise, revenue surprise, guidance reaction, and post-earnings price move (yfinance `earnings_dates` + price history — same data `calibrate` already uses)
-- [ ] Add a `PEER READ-THROUGH` section to the earnings brief prompt (peer, days ago, surprise, price reaction, one-line takeaway)
-- [ ] Update the `guidance_score` / `setup_score` scoring guides to reference peer results (e.g. peers beating + guiding up → tailwind; peers missing on the same driver → penalise)
-- [ ] **Beat-and-still-fall signal** (playbook Block B gate 5): if same-sector peers that already reported *beat and still fell*, the sector bar is elevated regardless of the name — downgrade conviction one notch. This is distinct from peers missing; it's the most dangerous pattern (good results, bad reaction)
-- [ ] Surface a one-line peer summary in the council ticker section
+- [x] Identify peers per ticker: curated `PEER_MAP` keyed on the names we trade most, clustered by industry (semis, solar, SMR/nuclear, autos, restaurants, footwear, LatAm fintech, miners, steel, …). Unmapped tickers yield an honest "no peer map" rather than a guess (yfinance exposes no peer list)
+- [x] For peers that reported in the last ~35 days, fetch EPS surprise + post-earnings day-1 price move — reuses `allocation/asymmetry.fetch_earnings_reactions` (one `earnings_dates` + price-history call per peer)
+- [x] Add a `PEER READ-THROUGH` section to the earnings brief prompt (peer, days ago, beat/miss, surprise, day-1 reaction, one-line takeaway)
+- [x] Update the `guidance_score` / `setup_score` scoring guides to reference peer results (peers beating + guiding up → tailwind; peers missing on the same driver → penalise)
+- [x] **Beat-and-still-fall signal** (playbook Block B gate 5): when same-sector peers *beat and still closed red*, `sector_bar_elevated` flips True; the brief prompt and the council synthesis prompt both downgrade conviction one notch. Distinct from a miss — the most dangerous pattern (good results, bad reaction)
+- [x] Surface a one-line peer summary on the council `Peers:` line (`format_peer_oneliner`); persisted per ticker as `peers.json`, live fallback in `allocation/layer.py`
 
 ### Notes
 - Strongest in clustered industries (semis, banks, airlines, retail) where read-through is well documented
-- No new data source needed — reuses the yfinance plumbing from `calibration/calibrator.py` and `earnings/data_fetcher.py`
+- No new data source needed — reuses the yfinance plumbing from `allocation/asymmetry.py` (same fetch the #14 engine already uses)
+- **Follow-ups:** widen `PEER_MAP` coverage as new names are traded; add revenue-surprise + an explicit guidance-reaction read (currently EPS surprise + price reaction only); consider SEC/industry peer auto-discovery to reduce the curated map's maintenance
 
 ---
 
@@ -420,8 +421,12 @@ Apply this rigour to every tunable threshold in #14/#15 (EV/implied 0.25, fade 0
 - [ ] **Risk-adjusted metrics** in `stats`: add Sharpe, Sortino, MaxDD, hit-rate, turnover (we currently only show win-rate / avg P&L)
 - [ ] Engine references when we outgrow a hand-rolled harness: **VectorBT** / **Zipline** (Python), **Nautilus** (Rust, multi-venue), **ZipLime** (AI idea→code→backtest)
 
-### Log schema v2 (prerequisite — Part 5)
-- [ ] Extend the trade log with T-1 context (`implied_move_pct`, `iv_rank`, `term_ratio`, `skew_25d`, `runup_1m_pct`, `runup_vs_sector_1m`, `dist_52w_high_pct`, `revision_direction_90d`, `short_interest_pct`, `regime_flag`), outcome (`beat_eps`, `beat_rev`, `guide`), reaction (`move_d1/d5/d20`, `coverage_ratio`), and management (`gate_path`, `action`, `pnl_final`)
+### Log schema v2 (prerequisite — Part 5) ✅ DONE (2026-06-23) — `tradingagents/trade_log.py`
+- [x] Extend the trade log with T-1 context (`implied_move_pct`, `iv_rank`, `term_ratio`, `skew_25d`, `runup_1m_pct`, `runup_vs_sector_1m`, `dist_52w_high_pct`, `revision_direction_30d`, `short_interest_pct`, `regime_flag`), outcome (`beat_eps`, `beat_rev`, `guide`), reaction (`move_d1/d5/d20`, `coverage_ratio`), and management (`gate_path`, `action`, `pnl_final`). `ensure_v2()` adds the keys (null) idempotently and is wired into the IBKR import so every new trade carries the v2 shape; `schema_version=2` stamped on each row
+- [x] **`backfill-trades` command:** links each trade to the screening run it came from (`find_screening_run`, matches both `screening_*` and `earnings_*` run dirs), fills T-1 context + `coverage_ratio` from the saved `pricing/crowding/asymmetry.json`, and fills `short_interest_pct` + outcome (`beat_eps`) + reaction (`move_d1/d5/d20`) from yfinance. Idempotent, guarded, `--no-network` / `--ticker` flags
+- [x] Fields owned by later items stay explicit-null with a documented owner: `iv_rank`/`term_ratio`/`skew_25d` (#3b), `regime_flag` (#15), `gate_path`/`action` (#16). `revision_direction_30d` is 30d-based (yfinance's `eps_revisions` window) rather than the 90d the original spec named
+- **Artifact divergence — RECONCILED (2026-06-24):** historical `reports/earnings/earnings_*` runs (produced by the **dashboard server**, `cli/server.py`) did not persist `pricing/crowding/asymmetry.json` because `server.py` had its *own copy* of the per-ticker screen loop that had drifted from `cli/commands/screen.py`. Fixed by extracting a single shared `screen_ticker()` (in `screen.py`) that both the CLI `screen` command and the server now call — it saves the complete report, `earnings_brief.md`, `fundamentals_score.json`, `peers.json`, and the `pricing/asymmetry/crowding.json` gate artifacts. Future dashboard runs are now fully enrichable. (Backfill still can't recover the T-1 context for *past* `reports/earnings/` trades — those files were never written — but it gets outcome/reaction/short-interest, and `find_screening_run` matches both layouts.)
+- **Broader reports-layout split — RECONCILED (2026-06-24):** the older CLI commands used to write/glob `reports/screening_*` at the **repo root** while the dashboard/website/IBKR tooling used `reports/earnings/`, so they didn't see each other's runs (the CLI `calibrate`/`allocate`/`trades` found 0 of the user's 78 runs). Centralised on one helper, `tradingagents/reports_layout.py` (`runs_root()` → `reports/earnings`, `iter_run_dirs()` → all runs newest-first matching both `screening_*`/`earnings_*` prefixes + legacy root). Migrated every site: `screen.py` (output dir + resume), `allocate`, `calibrate`/`trades` listing, the two `server.py` calibration pickers, `reports.py` website, `calibrator.load_all_calibrations`/`list_uncalibrated_runs` (master JSON pinned to the repo root), `trade_reflections`/`reflect` run-name detection, and `allocation/layer._load_historical_scores`. CLI and dashboard are now interchangeable; calibration loaders that previously returned nothing now find all 20 calibrated + 57 uncalibrated runs
 - [ ] Quarterly calibration loop: recompute hit rate by gate, regime, and run-up bucket; any gate whose pass-group doesn't beat its fail-group by a meaningful margin gets its threshold adjusted or cut (ties into #13 dream-mode)
 
 ### Notes
@@ -471,4 +476,4 @@ Apply this rigour to every tunable threshold in #14/#15 (EV/implied 0.25, fade 0
 
 ---
 
-*Last updated: 2026-06-23*
+*Last updated: 2026-06-24*
