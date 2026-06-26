@@ -527,13 +527,39 @@ function parseMarkdownTable(mdText){
 
 // ── Navigation ──────────────────────────────────────────────────────────────
 let view='overview', tradeFilter={out:'all',dir:'all',q:''};
-function go(v){
+const VIEWS=['overview','screenings','trades','reflections','performance','run'];
+// Served by FastAPI (http/https) → use clean paths (/screenings). Opened as a
+// local file:// → fall back to hash routing (#screenings), since paths can't work there.
+const usePath=(location.protocol==='http:'||location.protocol==='https:');
+// Current view from the URL — path first (when served), then hash. Defaults to overview.
+function currentView(){
+  if(usePath){
+    const seg=location.pathname.replace(/^\/+|\/+$/g,'').split('/').pop();
+    if(VIEWS.includes(seg))return seg;
+  }
+  const h=(location.hash||'').replace(/^#\/?/,'').split('?')[0].trim();
+  return VIEWS.includes(h)?h:'overview';
+}
+// Switch the active view + render it. Does NOT touch the URL.
+function applyView(v){
+  if(!VIEWS.includes(v))v='overview';
   document.querySelectorAll('.view').forEach(e=>e.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(e=>e.classList.remove('active'));
   $('v-'+v).classList.add('active');$('ni-'+v).classList.add('active');
   view=v;render(v);window.scrollTo(0,0);
-  mobClose();
+  document.title='TradingAgents — '+v.charAt(0).toUpperCase()+v.slice(1);
 }
+// Navigate to a view (nav click) — updates the URL so it's bookmarkable/reload-safe.
+function go(v){
+  if(!VIEWS.includes(v))v='overview';
+  if(usePath){
+    const url=(v==='overview'?'/':'/'+v);
+    if(location.pathname!==url){try{history.pushState({v},'',url);}catch(e){}}
+  } else if(('#'+v)!==location.hash){location.hash=v;}
+  applyView(v);mobClose();
+}
+window.addEventListener('popstate',()=>applyView(currentView()));
+window.addEventListener('hashchange',()=>{if(!usePath)applyView(currentView());});
 
 // ── Overlay ──────────────────────────────────────────────────────────────────
 function openDetail(title,html){$('ot').textContent=title;$('ob').innerHTML=html;$('ov').classList.add('open');document.body.style.overflow='hidden'}
@@ -968,6 +994,59 @@ function openScreening(id){
   if(b){b.style.display='block';if(c){c.style.transform='rotate(90deg)';c.style.color='var(--accent)'}}
   const el=$('sc-'+id);if(el)el.scrollIntoView({behavior:'smooth',block:'start'});
 }
+function sigRow(label,val,tip){
+  return `<div style="display:flex;gap:12px;padding:5px 0;border-bottom:1px solid var(--border);font-size:12px">
+    <div style="min-width:200px;color:var(--muted)"${tip?` title="${esc(tip)}"`:''}>${esc(label)}</div>
+    <div style="flex:1;color:var(--dim)">${val}</div></div>`;
+}
+// Signed % string with win/loss colouring.
+function pct(v,dp){ if(v==null)return '—'; const s=(v>0?'+':'')+Number(v).toFixed(dp==null?1:dp)+'%';
+  return `<span style="color:${v>0?'var(--win)':(v<0?'var(--loss)':'var(--dim)')}">${s}</span>`; }
+function renderCouncilSignals(t){
+  const p=t.pricing, a=t.asymmetry, c=t.crowding, pe=t.peers;
+  if(!p && !a && !c && !pe) return '';
+  let rows='';
+  if(p){
+    const mv=p.implied_move_pct!=null?`±${p.implied_move_pct}%`+(p.implied_move_expiry?` <span style="color:var(--muted)">(exp ${esc(p.implied_move_expiry)})</span>`:''):'—';
+    rows+=sigRow('Implied earnings move',mv,'ATM straddle ÷ spot for the first expiry after earnings');
+    const meta=[p.price!=null?`Spot $${Number(p.price).toFixed(2)}`:null,
+      p.forward_pe!=null?`Fwd P/E ${p.forward_pe}`:null,
+      p.week52_position_pct!=null?`52w pos ${p.week52_position_pct}%`:null].filter(Boolean).join(' · ');
+    if(meta)rows+=sigRow('Valuation',meta);
+  }
+  if(a && a.n_prints){
+    const evStr=a.ev!=null?(`<b>${pct(a.ev)}</b>`+(a.ev_to_implied!=null?` <span style="color:var(--muted)">(EV/move ${(a.ev_to_implied>0?'+':'')+a.ev_to_implied})</span>`:'')):'<span style="color:var(--dim)">n/a — no recent miss</span>';
+    rows+=sigRow('EV (long into print)',evStr,'P(beat)·E[move|beat] + (1−P(beat))·E[move|miss]');
+    const det=[a.e_move_beat!=null?`E[beat] ${pct(a.e_move_beat)}`:null,
+      a.e_move_miss!=null?`E[miss] ${pct(a.e_move_miss)}`:null,
+      a.fade_rate!=null?`fade ${Math.round(a.fade_rate*100)}%`:null,
+      a.coverage_ratio!=null?`coverage ${a.coverage_ratio}×`:null].filter(Boolean).join(' · ');
+    rows+=sigRow(`Payoff history (${a.n_beats}B/${a.n_misses}M · ${a.n_prints} prints)`,det);
+  }
+  if(c){
+    const parts=[c.runup_1m_pct!=null?`1m ${pct(c.runup_1m_pct)}`:null,
+      c.runup_1m_vs_sector!=null?`${pct(c.runup_1m_vs_sector)} vs ${esc(c.sector_etf||'sector')}`:null,
+      c.dist_52w_high_pct!=null?`${c.dist_52w_high_pct}% below 52w high`:null].filter(Boolean).join(' · ');
+    if(parts)rows+=sigRow('Run-up / crowding',parts);
+    if(c.flags && c.flags.length)rows+=sigRow('',`<span style="color:var(--warn)">⚠ ${c.flags.map(esc).join(' · ')}</span>`);
+  }
+  if(pe && pe.has_map){
+    if(pe.n_reported){
+      const chips=(pe.peers||[]).map(x=>{
+        const mv=x.day1_move_pct!=null?(x.day1_move_pct>0?'+':'')+Math.round(x.day1_move_pct)+'%':'';
+        const tag=x.beat?'B':(x.beat===false?'M':'?');
+        const col=x.beat_and_fell?'var(--loss)':(x.beat?'var(--win)':'var(--dim)');
+        return `<span style="color:${col}" title="${esc(x.peer)} · ${x.days_ago}d ago">${esc(x.peer)} ${tag}${mv}${x.beat_and_fell?'!':''}</span>`;
+      }).join('  ·  ');
+      rows+=sigRow('Peer read-through',chips);
+      if(pe.sector_bar_elevated)rows+=sigRow('',`<span style="color:var(--loss)">⚠ Elevated bar — a peer beat and still fell; downgrade conviction</span>`);
+    } else {
+      rows+=sigRow('Peer read-through','<span style="color:var(--muted)">No peers reported in the lookback window</span>');
+    }
+  }
+  if(!rows)return '';
+  return `<div class="brief-header">Council Signals</div><div style="padding:8px 22px 14px">${rows}</div>`;
+}
 function openTickerDetail(runId,ticker){
   const run=(DATA.screening_runs||[]).find(r=>r.id===runId);
   if(!run)return;
@@ -994,6 +1073,27 @@ function openTickerDetail(runId,ticker){
     if(t.one_liner){body+=`<blockquote style="margin:0;padding:11px 22px;border-left:3px solid var(--accent);color:var(--dim);background:var(--accent-bg);font-style:italic;font-size:12.5px;line-height:1.55;border-bottom:1px solid var(--border)">${esc(t.one_liner)}</blockquote>`}
     if(t.fundamentals_summary){body+=`<div style="padding:7px 22px 10px;font-size:11px;color:var(--muted);border-bottom:1px solid var(--border)">Fundamentals: ${esc(t.fundamentals_summary)}</div>`}
   }
+
+  // Council allocation decision (from the AI Council allocation report)
+  if(t.allocation_amount!=null||t.allocation_rationale){
+    const amt=t.allocation_amount!=null?`$${Number(t.allocation_amount).toLocaleString()}`:'$0';
+    const pctv=t.allocation_pct!=null?`${t.allocation_pct}% of budget`:'';
+    const dir=t.allocation_direction||t.signal||'';
+    const conv=t.allocation_conviction||'';
+    const deployed=(t.allocation_amount||0)>0;
+    body+=`<div class="brief-header">Council Allocation</div>
+      <div style="padding:10px 22px 14px">
+        <div style="display:flex;gap:9px;align-items:center;flex-wrap:wrap;margin-bottom:${t.allocation_rationale?'8px':'0'}">
+          <span class="badge ${badgeClass(dir)}">${esc(dir||'—')}</span>
+          ${conv?`<span class="badge ${badgeClass(conv)}">${esc(conv)} conviction</span>`:''}
+          <span style="font-weight:700;color:${deployed?'var(--accent)':'var(--muted)'}">${amt}${pctv?` <span style="font-weight:400;color:var(--muted)">· ${pctv}</span>`:''}</span>
+        </div>
+        ${t.allocation_rationale?`<div style="font-size:12px;color:var(--dim);line-height:1.55">${esc(t.allocation_rationale)}</div>`:''}
+      </div>`;
+  }
+
+  // Council Signals (#14 pricing/EV/asymmetry/crowding, #9 peers)
+  body+=renderCouncilSignals(t);
 
   // Portfolio Manager Decision
   if(t.portfolio_decision_md){
@@ -1857,7 +1957,7 @@ function render(v){
 document.addEventListener('DOMContentLoaded',()=>{
   const ts=DATA.generated_at?new Date(DATA.generated_at).toLocaleString('en-US',{month:'short',day:'numeric',year:'numeric',hour:'2-digit',minute:'2-digit'}):'—';
   $('gen-ts').textContent=ts;
-  render('overview');
+  applyView(currentView());   // honor /screenings (or #screenings) on initial load / reload
   setTimeout(_pollJobs,600);
 });
 </script>

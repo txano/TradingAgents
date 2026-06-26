@@ -678,6 +678,13 @@ async def root():
     return HTMLResponse(html)
 
 
+# Client-side-routed views: serve the same single-page app so /screenings,
+# /trades, … load directly (reload / bookmark / deep link) rather than only via
+# the in-app nav. The frontend reads location.pathname to render the right view.
+for _view in ("overview", "screenings", "trades", "reflections", "performance", "run"):
+    app.add_api_route(f"/{_view}", root, response_class=HTMLResponse)
+
+
 @app.get("/api/calendar")
 async def get_calendar():
     return JSONResponse(_load_calendar())

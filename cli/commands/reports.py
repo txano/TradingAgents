@@ -1,5 +1,6 @@
 """Static reports site builder — _build_reports_data, build_web, _auto_build_web."""
 
+import json
 from pathlib import Path
 from typing import Optional
 
@@ -7,6 +8,16 @@ import typer
 from rich.console import Console
 
 console = Console()
+
+
+def _load_json(path: Path):
+    """Best-effort JSON load; returns None on missing/invalid."""
+    if not path.exists():
+        return None
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
 
 
 def _extract_brief_scores(brief_md: str) -> dict:
@@ -67,8 +78,11 @@ def _build_reports_data(reports_dir: Path, trades_path: Path) -> dict:
                         tk = entry.get("ticker", "")
                         if tk:
                             alloc_by_ticker[tk] = {
-                                "amount": entry.get("amount", 0),
-                                "pct":    entry.get("pct_of_budget", 0.0),
+                                "amount":     entry.get("amount", 0),
+                                "pct":        entry.get("pct_of_budget", 0.0),
+                                "direction":  entry.get("direction"),
+                                "conviction": entry.get("conviction"),
+                                "rationale":  entry.get("rationale"),
                             }
             except Exception:
                 pass
@@ -117,13 +131,17 @@ def _build_reports_data(reports_dir: Path, trades_path: Path) -> dict:
                 pm_md  = raw_pm[:12_000] if len(raw_pm) > 12_000 else raw_pm
             tk_alloc = alloc_by_ticker.get(td.name, {})
 
-            fund_score: dict = {}
-            fund_path = td / "fundamentals_score.json"
-            if fund_path.exists():
-                try:
-                    fund_score = json.loads(fund_path.read_text(encoding="utf-8"))
-                except Exception:
-                    pass
+            fund_score = _load_json(td / "fundamentals_score.json") or {}
+
+            # Council signal artifacts (#14 pricing/EV/asymmetry/crowding, #9 peers).
+            # Drop the heavy per-print "reactions" array from asymmetry to keep the
+            # embedded payload small.
+            pricing  = _load_json(td / "pricing.json")
+            asym     = _load_json(td / "asymmetry.json")
+            crowding = _load_json(td / "crowding.json")
+            peers    = _load_json(td / "peers.json")
+            if isinstance(asym, dict):
+                asym = {k: v for k, v in asym.items() if k != "reactions"}
 
             tickers.append({
                 "ticker":                td.name,
@@ -141,6 +159,13 @@ def _build_reports_data(reports_dir: Path, trades_path: Path) -> dict:
                 "fundamentals_summary":  fund_score.get("summary"),
                 "allocation_amount":     tk_alloc.get("amount"),
                 "allocation_pct":        tk_alloc.get("pct"),
+                "allocation_direction":  tk_alloc.get("direction"),
+                "allocation_conviction": tk_alloc.get("conviction"),
+                "allocation_rationale":  tk_alloc.get("rationale"),
+                "pricing":               pricing,
+                "asymmetry":             asym,
+                "crowding":              crowding,
+                "peers":                 peers,
                 "earnings_brief_md":     capped,
                 "portfolio_decision_md": pm_md,
             })
