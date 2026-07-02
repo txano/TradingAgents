@@ -13,6 +13,7 @@ from tradingagents.allocation.fundamentals_scorer import fetch_fundamental_metri
 from tradingagents.allocation.pricing import fetch_pricing_context, format_pricing
 from tradingagents.allocation.asymmetry import build_asymmetry, format_asymmetry
 from tradingagents.allocation.crowding import fetch_crowding, format_crowding
+from tradingagents.allocation.insider import build_insider, format_insider
 from tradingagents.earnings.peers import build_peer_readthrough, format_peer_oneliner
 from tradingagents.allocation.weights import apply_weights, load_weights
 from tradingagents.learning.lessons import distill_lessons, load_cached_lessons, load_reflections
@@ -280,6 +281,23 @@ class AllocationLayer:
                 ctx["peers"] = peers or {}
                 ctx["peer_summary"] = format_peer_oneliner(peers)
 
+                # Insider signal (#18) — cached at screening time, live fallback
+                insider = None
+                insider_path = base / ticker / "insider.json"
+                if insider_path.exists():
+                    try:
+                        insider = json.loads(insider_path.read_text(encoding="utf-8"))
+                    except Exception:
+                        pass
+                if insider is None:
+                    try:
+                        insider = build_insider(ticker)
+                        insider_path.write_text(json.dumps(insider, indent=2), encoding="utf-8")
+                    except Exception:
+                        insider = None
+                ctx["insider"] = insider or {}
+                ctx["insider_summary"] = format_insider(insider)
+
             else:
                 ctx.setdefault("fundamentals_score",   0)
                 ctx.setdefault("bs_quality",           "Adequate")
@@ -293,6 +311,8 @@ class AllocationLayer:
                 ctx.setdefault("crowding_summary",     "Not available")
                 ctx.setdefault("peers",                {})
                 ctx.setdefault("peer_summary",         "Not available")
+                ctx.setdefault("insider",              {})
+                ctx.setdefault("insider_summary",      "Not available")
 
             # Historical screening data
             history = self._load_historical_scores(ticker, base) if base else []

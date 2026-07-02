@@ -201,6 +201,14 @@ FELL — the most dangerous pattern (good results, bad reaction): the sector is 
 punishing prints regardless of quality, so cut conviction one tier on longs in that \
 name. Peers shown missing (M) on a shared driver is a weaker tailwind — lean toward \
 SKIP over BUY. Peers beating and holding their gains is a genuine tailwind.
+- Insider signal (the Insider line): a "cluster buy" (several distinct insiders \
+buying) or a "reversal" (an insider who was selling and starts buying) is a genuine \
+bullish confirmation — historically strong forward returns — and can support a \
+higher conviction tier, especially alongside a cheap valuation. A notable single \
+buy is a milder positive. Discount routine "net selling"/"heavy net selling" — \
+insiders sell for many non-signal reasons (diversification, 10b5-1 plans), so do \
+NOT treat selling as bearish on its own. Insider buying supports a long; it does \
+not by itself override an unfavorable EV/asymmetry or a beat-and-fall setup.
 - Historical lessons from past trades are provided — apply them when relevant; \
 they represent real patterns observed in this specific strategy.
 - Cash not deployed is acceptable; never force marginal trades.
@@ -306,6 +314,7 @@ Pricing:          {pricing_summary}
 Asymmetry/EV:     {asymmetry_summary}
 Crowding:         {crowding_summary}
 Peers:            {peer_summary}
+Insider:          {insider_summary}
 History ({historical_count} prior screening(s), avg_total={historical_avg_total}, trend={score_trend}):
   {historical_brief}
 Signal: {signal} | Confidence: {confidence}
@@ -347,6 +356,7 @@ def _format_sections(contexts: list[dict]) -> str:
                 asymmetry_summary=ctx.get("asymmetry_summary", "Not available"),
                 crowding_summary=ctx.get("crowding_summary", "Not available"),
                 peer_summary=ctx.get("peer_summary", "Not available"),
+                insider_summary=ctx.get("insider_summary", "Not available"),
                 historical_count=ctx.get("historical_count", 0),
                 historical_avg_total=avg_str,
                 score_trend=ctx.get("score_trend", "New ticker"),

@@ -24,6 +24,7 @@ from tradingagents.allocation.layer import build_advisor_llms, parse_allocation
 from tradingagents.allocation.pricing import fetch_pricing_context
 from tradingagents.allocation.asymmetry import build_asymmetry
 from tradingagents.allocation.crowding import fetch_crowding
+from tradingagents.allocation.insider import build_insider
 from cli.utils import (
     select_llm_provider, select_shallow_thinking_agent, select_deep_thinking_agent,
     select_research_depth, ask_gemini_thinking_config, ask_openai_reasoning_effort,
@@ -92,6 +93,11 @@ def screen_ticker(
         try:
             crowding = fetch_crowding(ticker, sector=sector)
             (ticker_dir / "crowding.json").write_text(json.dumps(crowding, indent=2), encoding="utf-8")
+        except Exception:
+            pass
+        try:
+            insider = build_insider(ticker)
+            (ticker_dir / "insider.json").write_text(json.dumps(insider, indent=2), encoding="utf-8")
         except Exception:
             pass
 

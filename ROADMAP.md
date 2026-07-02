@@ -444,7 +444,8 @@ Apply this rigour to every tunable threshold in #14/#15 (EV/implied 0.25, fade 0
 - Two reels independently name **TradingAgents**: one as a "top fast-growing AI-finance GitHub repo," another endorsing exactly our **three-layer** structure ("don't build a bot — build a research desk + agent framework + data layer, then execution; start in paper trading"). Our architecture direction is externally corroborated.
 
 ### High value / low effort
-- [ ] **Insider-signal refinement** (cross-ref: fundamentals analyst, which already has `get_insider_transactions`). The high-signal patterns are **cluster buys** and **sell→buy reversals** (insiders who stop selling and start buying), *not* any insider activity — two reels corroborate this with real forward-return claims (medtech: BSX/ABT/GEHC; Toyota→Joby). Detect those patterns specifically; consider **SEC Form-4 (EDGAR)** as a more complete/timely source than yfinance.
+- [x] **Insider-signal refinement** ✅ DONE (2026-06-23) — `tradingagents/allocation/insider.py`. Deterministically detects **cluster buys** (≥3 distinct net-buying insiders in 90d) and **sell→buy reversals** (sold in the older window, buying now), plus notable buys and net values; routine/programmatic selling is labelled "often routine" and NOT treated as bearish. Persisted to `insider.json`, shown on the council `Insider:` line + a synthesis rule (cluster/reversal = bullish confirmation, can lift a tier; selling discounted). Live-validated: it independently flagged the medtech reel's own example (BSX cluster buy). Thresholds tunable for #17.
+  - [ ] Follow-up: **SEC Form-4 (EDGAR)** as a more complete/timely source than yfinance (yfinance insider data can be laggy/partial).
 - [ ] **Historical-relative valuation** in `fundamentals_scorer.py`: score valuation vs. the name's *own* historical median (the medtech reel: 17× EV/EBITDA vs. a 31× median), not just absolute metrics — cheap, strong context.
 - [ ] **Risk-adjusted stats** (also listed in #17): Sharpe / Sortino / MaxDD / hit-rate / turnover in the `stats` command.
 
@@ -476,4 +477,4 @@ Apply this rigour to every tunable threshold in #14/#15 (EV/implied 0.25, fade 0
 
 ---
 
-*Last updated: 2026-06-24*
+*Last updated: 2026-06-23*

@@ -54,6 +54,7 @@ AllocationLayer
   └── pricing.py              spot / valuation / options-implied earnings move
   └── asymmetry.py            payoff asymmetry from historical prints (E[move|beat/miss], fade rate, coverage, EV)
   └── crowding.py             run-up vs sector ETF, 52w-high distance, EPS-revision momentum (#14c)
+  └── insider.py              cluster-buy / sell→buy-reversal detection from insider tape (#18)
   └── common.py               shared helpers (cut, parse_allocation)
 
 LearningLayer (tradingagents/learning/)
@@ -79,6 +80,7 @@ Output per ticker (saved to `reports/earnings/{screening,earnings}_YYYY-MM-DD_TI
 | `pricing.json` | Spot, market cap, fwd P/E, 52w position, implied earnings move |
 | `asymmetry.json` | Historical E[move\|beat], E[move\|miss], fade rate, coverage ratio, EV of a long |
 | `crowding.json` | Run-up (1m/3m, vs sector ETF), distance from 52w high, EPS-revision momentum |
+| `insider.json` | Insider signal (#18): cluster buys, sell→buy reversals, net buy/sell values, routine-selling flag |
 | `peers.json` | Peer earnings read-through (#9): peers reported in last ~35d, EPS surprise + day-1 reaction, `sector_bar_elevated` (beat-and-still-fall) flag |
 | `complete_report.md` | Full LangGraph multi-agent report |
 | `1_analysts/` … `5_portfolio/` | Per-team agent outputs |
@@ -353,6 +355,7 @@ reports/
 │           ├── pricing.json            ← spot / valuation / implied earnings move
 │           ├── asymmetry.json          ← historical payoff asymmetry + EV
 │           ├── crowding.json           ← run-up / 52w-high / revision momentum
+│           ├── insider.json            ← cluster buys / sell→buy reversals (#18)
 │           ├── peers.json              ← peer earnings read-through (#9)
 │           ├── complete_report.md
 │           └── 1_analysts/ … 5_portfolio/
@@ -521,6 +524,7 @@ add a `suggest_weights(calibration_rows, trade_entries)` function there.
 | Pricing / implied move | `tradingagents/allocation/pricing.py` |
 | Payoff asymmetry / EV | `tradingagents/allocation/asymmetry.py` |
 | Crowding / run-up gate | `tradingagents/allocation/crowding.py` |
+| Insider signal | `tradingagents/allocation/insider.py` |
 | Lessons library | `tradingagents/learning/lessons.py` |
 | Batch reflection | `tradingagents/learning/trade_reflections.py` |
 | Self-improvement engine | `tradingagents/learning/self_improve.py` (weight + guarded prompt-edit auto-apply) |
