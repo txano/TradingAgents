@@ -13,8 +13,8 @@ yfinance call for the realised outcome/reaction.
 Fields we can't fill yet are kept as explicit nulls so data accumulates with a
 stable shape; each is owned by a later roadmap item:
   * iv_rank / term_ratio / skew_25d   → #3b (IBKR options pipeline)
-  * regime_flag                       → #15 (tactical regime gates)
   * gate_path / action                → #16 (trade-management triage)
+(regime_flag is filled from the run's regime.json when present — #15.)
 
 All network access is guarded — failures leave fields None, never raise, so a
 backfill pass can never corrupt the log.
@@ -43,7 +43,7 @@ T1_CONTEXT_FIELDS = (
     "dist_52w_high_pct",       # crowding.json — distance below 52w high
     "revision_direction_30d",  # crowding.json — sign(up - down) EPS revisions (30d)
     "short_interest_pct",      # yfinance info — shortPercentOfFloat
-    "regime_flag",             # #15 — null for now
+    "regime_flag",             # regime.json (run root) — "risk_off"/"normal" (#15)
 )
 
 # --- Outcome: what actually happened in the report --------------------------
@@ -203,6 +203,11 @@ def enrich_from_artifacts(trade: dict, reports_dir: Path = Path("reports")) -> d
     asym = _load_json(ticker_dir / "asymmetry.json") or {}
     _set("coverage_ratio", _safe_float(asym.get("coverage_ratio")))
 
+    # regime.json lives at the run root (global per run), not in the ticker dir (#15)
+    regime = _load_json(ticker_dir.parent / "regime.json") or {}
+    if trade.get("regime_flag") is None and regime.get("risk_off") is not None:
+        trade["regime_flag"] = "risk_off" if regime["risk_off"] else "normal"
+
     return trade
 
 
@@ -357,3 +362,56 @@ def backfill(
         "newly_linked": linked,
         "newly_filled_outcome": filled_outcome,
     }
+
+
+# ---------------------------------------------------------------------------
+# Risk-adjusted statistics (#17/#18 — Sharpe / Sortino / max drawdown)
+# ---------------------------------------------------------------------------
+
+def risk_stats(trades: list[dict]) -> dict:
+    """Per-trade risk-adjusted stats from closed-trade returns.
+
+    Returns are per-trade percentages (pnl_pct, reconstructed from
+    pnl/shares/entry_price when missing), equal-weighted and not annualised —
+    with irregular event-driven holding periods, per-trade is the honest unit.
+
+    Sharpe  = mean(r) / std(r)                     (population std)
+    Sortino = mean(r) / downside_dev(r)            (target 0; None when no losers)
+    Max drawdown = largest peak-to-trough drop on the cumulative sum of
+    per-trade returns in exit-date order, in percentage points (assumes
+    equal sizing per trade).
+    """
+    dated: list[tuple[str, float]] = []
+    for t in trades:
+        r = _safe_float(t.get("pnl_pct"))
+        if r is None:
+            pnl, sh, ep = _safe_float(t.get("pnl")), _safe_float(t.get("shares")), _safe_float(t.get("entry_price"))
+            if pnl is not None and sh and ep:
+                r = pnl / (sh * ep) * 100
+        if r is not None:
+            dated.append((str(t.get("exit_date") or t.get("logged_at") or ""), r))
+
+    out = {"n": len(dated), "sharpe": None, "sortino": None,
+           "max_drawdown_pp": None, "no_losses": False}
+    if len(dated) < 2:
+        return out
+
+    rets = [r for _, r in dated]
+    n = len(rets)
+    mean = sum(rets) / n
+    std = math.sqrt(sum((x - mean) ** 2 for x in rets) / n)
+    downside = math.sqrt(sum(min(x, 0.0) ** 2 for x in rets) / n)
+
+    out["sharpe"] = round(mean / std, 2) if std > 0 else None
+    if downside > 0:
+        out["sortino"] = round(mean / downside, 2)
+    else:
+        out["no_losses"] = True  # Sortino undefined (infinite) — flag instead
+
+    cum = peak = max_dd = 0.0
+    for _, r in sorted(dated, key=lambda d: d[0]):
+        cum += r
+        peak = max(peak, cum)
+        max_dd = max(max_dd, peak - cum)
+    out["max_drawdown_pp"] = round(max_dd, 1)
+    return out

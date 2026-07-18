@@ -55,6 +55,8 @@ AllocationLayer
   └── asymmetry.py            payoff asymmetry from historical prints (E[move|beat/miss], fade rate, coverage, EV)
   └── crowding.py             run-up vs sector ETF, 52w-high distance, EPS-revision momentum (#14c)
   └── insider.py              cluster-buy / sell→buy-reversal detection from insider tape (#18)
+  └── regime.py               tactical regime gates (#15b): SPX-vs-50dma / VIX risk-off,
+                              FOMC/CPI collision calendar, sizing multiplier
   └── common.py               shared helpers (cut, parse_allocation)
 
 LearningLayer (tradingagents/learning/)
@@ -91,6 +93,7 @@ Output per screening run (saved to `reports/earnings/{screening,earnings}_YYYY-M
 |------|----------|
 | `screening_table.md` | Ranked table of all tickers with scores |
 | `allocation.md` | AI Council allocation report |
+| `regime.json` | Market regime at allocation time (#15b): SPX vs 50-dma, VIX, risk_off flag |
 | `calibration.json` | Post-earnings accuracy measurement (written by `calibrate`) |
 | `calibration.md` | Human-readable calibration report |
 
@@ -208,6 +211,19 @@ Sizing rules enforced in the synthesis prompt AND re-checked by the validator:
 - Implied earnings move is treated as the market's priced-in expectation: size
   down when the move is expensive relative to conviction
 
+Implied-move sizing cap & regime gates (#15, in `regime.py` + `validator.py` + synthesis prompt):
+- **Implied-move loss cap (#15a, hard):** a position's plausible one-day loss
+  (`amount × implied_move`) may not exceed 1% of budget (`IMPLIED_MOVE_LOSS_CAP`) —
+  a ±10% implied-move name gets half the dollars of a ±5% name. Applies to BUYs
+  and SHORTs; violation → corrective re-prompt → `⚠ Constraint Check`.
+- **Tactical regime gates (#15b):** the regime (SPX below its 50-dma or VIX > 22
+  → risk-off) is fetched once per allocation run, cached as `regime.json` at the
+  run root, and shown to the synthesis LLM as a `=== MARKET REGIME ===` block.
+  Risk-off halves the loss cap; an FOMC/CPI release within ±2 sessions of a
+  ticker's print (static calendars in `regime.py`, per-ticker `Macro:` line)
+  halves it again. `regime.sizing_multiplier` is the single source for the
+  multiplier, used by both the prompt and the validator.
+
 Payoff-asymmetry & crowding gates (#14, in `validator.py` + synthesis prompt):
 - **Hard EV gate (#14b):** a BUY whose computable expectancy is clearly negative
   (`EV ≤ 0` or `EV/implied_move < 0.25`) is a validation violation → corrective
@@ -306,7 +322,7 @@ existing values or raises.
 | | `runup_1m_pct`, `runup_vs_sector_1m`, `dist_52w_high_pct`, `revision_direction_30d` | `crowding.json` |
 | | `short_interest_pct` | yfinance `info.shortPercentOfFloat` |
 | | `iv_rank`, `term_ratio`, `skew_25d` | **null** — owned by #3b (IBKR options) |
-| | `regime_flag` | **null** — owned by #15 |
+| | `regime_flag` | run-root `regime.json` (#15) — "risk_off" / "normal" |
 | Outcome | `beat_eps` | yfinance `earnings_dates` |
 | | `beat_rev`, `guide` | **null** — not auto-derivable yet |
 | Reaction | `move_d1`, `move_d5`, `move_d20` | yfinance price history around the print |
@@ -380,7 +396,7 @@ reports/
 | `trades` | Display trade history table |
 | `calibrate` | Measure prediction accuracy for a past screening run |
 | `correlation` | Score-to-outcome correlation analysis |
-| `stats` | Win rate, avg P&L, beat/guidance accuracy, calibration by confidence |
+| `stats` | Win rate, total P&L, Sharpe/Sortino/max-drawdown (per-trade), beat/guidance accuracy, calibration by confidence |
 | `import-ibkr` | Import closed trades from IBKR Flex XML |
 | `backfill-trades` | Backfill schema-v2 context/outcome/reaction fields on `trades.json` (#17; `--no-network`, `--ticker`) |
 | `allocation-weights` | View or update the four scoring weights (beat / guidance / setup / fundamentals) |
@@ -525,6 +541,7 @@ add a `suggest_weights(calibration_rows, trade_entries)` function there.
 | Payoff asymmetry / EV | `tradingagents/allocation/asymmetry.py` |
 | Crowding / run-up gate | `tradingagents/allocation/crowding.py` |
 | Insider signal | `tradingagents/allocation/insider.py` |
+| Regime gates / macro calendar | `tradingagents/allocation/regime.py` |
 | Lessons library | `tradingagents/learning/lessons.py` |
 | Batch reflection | `tradingagents/learning/trade_reflections.py` |
 | Self-improvement engine | `tradingagents/learning/self_improve.py` (weight + guarded prompt-edit auto-apply) |

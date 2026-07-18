@@ -15,7 +15,9 @@ import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from tradingagents.allocation.common import parse_allocation
+from tradingagents.allocation.regime import VIX_RISK_OFF, format_regime, sizing_multiplier
 from tradingagents.allocation.validator import (
+    IMPLIED_MOVE_LOSS_CAP,
     asymmetry_advisories,
     crowding_advisories,
     format_advisories,
@@ -201,6 +203,19 @@ FELL — the most dangerous pattern (good results, bad reaction): the sector is 
 punishing prints regardless of quality, so cut conviction one tier on longs in that \
 name. Peers shown missing (M) on a shared driver is a weaker tailwind — lean toward \
 SKIP over BUY. Peers beating and holding their gains is a genuine tailwind.
+- Implied-move loss cap (HARD, #15a): a position's plausible one-day loss is \
+amount × implied move. Keep every position's amount × implied_move at or below \
+{im_cap_pct:.2f}% of budget (${im_cap:,} at the current regime multiplier) — so a \
+±10% implied-move name gets HALF the dollars of a ±5% name at equal conviction. \
+Size off the implied move, not conviction alone; positions above this cap are \
+rejected by validation. When the implied move is unknown, size conservatively as \
+if it were large.
+- Tactical regime gates (#15b): the MARKET REGIME block reports risk-off status \
+(SPX below its 50-dma or VIX > {vix_risk_off:.0f}). In risk-off tape beats get \
+sold — halve ALL position sizes (the loss cap above already reflects this via \
+the regime multiplier). A ticker whose Macro line shows a COLLISION (FOMC or CPI \
+within ±2 sessions of the print) will have a contaminated reaction — halve that \
+position again, or prefer SKIP.
 - Insider signal (the Insider line): a "cluster buy" (several distinct insiders \
 buying) or a "reversal" (an insider who was selling and starts buying) is a genuine \
 bullish confirmation — historically strong forward returns — and can support a \
@@ -217,6 +232,9 @@ they represent real patterns observed in this specific strategy.
 _SYNTHESIS_HUMAN = """\
 Budget: ${budget:,}
 Analysis Date: {trade_date}
+
+=== MARKET REGIME ===
+{regime_block}
 
 === TICKER DATA ===
 {ticker_sections}
@@ -315,6 +333,7 @@ Asymmetry/EV:     {asymmetry_summary}
 Crowding:         {crowding_summary}
 Peers:            {peer_summary}
 Insider:          {insider_summary}
+Macro:            {macro_summary}
 History ({historical_count} prior screening(s), avg_total={historical_avg_total}, trend={score_trend}):
   {historical_brief}
 Signal: {signal} | Confidence: {confidence}
@@ -357,6 +376,7 @@ def _format_sections(contexts: list[dict]) -> str:
                 crowding_summary=ctx.get("crowding_summary", "Not available"),
                 peer_summary=ctx.get("peer_summary", "Not available"),
                 insider_summary=ctx.get("insider_summary", "Not available"),
+                macro_summary=ctx.get("macro_summary", "Not available"),
                 historical_count=ctx.get("historical_count", 0),
                 historical_avg_total=avg_str,
                 score_trend=ctx.get("score_trend", "New ticker"),
@@ -387,6 +407,7 @@ def run_council(
     lessons_block: str = "",
     progress_cb=None,
     advisor_llms: list | None = None,
+    regime: dict | None = None,
 ) -> str:
     """Run the full council pipeline and return the final allocation report.
 
@@ -400,6 +421,8 @@ def run_council(
         advisor_llms: Optional list of chat models assigned to advisors
             round-robin (perspective + review), so the council's views come
             from genuinely different models. None/empty = all advisors use llm.
+        regime: Optional #15b market-regime dict (regime.fetch_regime). Shown to
+            the synthesis LLM and used to scale the implied-move loss cap.
     """
     beat_w         = weights.get("beat",         _WEIGHT_DEFAULTS["beat"])
     guidance_w     = weights.get("guidance",     _WEIGHT_DEFAULTS["guidance"])
@@ -500,6 +523,10 @@ def run_council(
         if lbl in review_responses
     ) or "[No cross-reviews available.]"
 
+    # #15: the loss cap shown to the LLM reflects the global risk-off multiplier;
+    # per-ticker macro collisions halve it again (stated as a rule, enforced by
+    # the validator via each context's macro_collisions).
+    regime_mult = sizing_multiplier(regime)
     synthesis_system = _SYNTHESIS_SYSTEM.format(
         budget=budget,
         single_cap=int(budget * 0.30),
@@ -513,10 +540,14 @@ def run_council(
         moderate_thresh=moderate_thresh,
         weak_thresh=moderate_thresh - 1,
         short_thresh=short_thresh,
+        im_cap_pct=IMPLIED_MOVE_LOSS_CAP * regime_mult * 100,
+        im_cap=int(budget * IMPLIED_MOVE_LOSS_CAP * regime_mult),
+        vix_risk_off=VIX_RISK_OFF,
     )
     synthesis_human = _SYNTHESIS_HUMAN.format(
         budget=budget,
         trade_date=trade_date,
+        regime_block=format_regime(regime),
         ticker_sections=ticker_sections,
         perspectives=perspectives_block,
         reviews=reviews_block,
@@ -528,7 +559,8 @@ def run_council(
     # ── Step 5: deterministic constraint check + one corrective re-prompt ─────
     _log("Validating allocation constraints...")
     violations = validate_allocation(
-        parse_allocation(report), budget, ticker_contexts, short_threshold=short_thresh
+        parse_allocation(report), budget, ticker_contexts,
+        short_threshold=short_thresh, regime=regime,
     )
     if violations:
         _log(f"  {len(violations)} violation(s) found; requesting one corrected pass...")
@@ -540,7 +572,7 @@ def run_council(
             corrected = _call(llm, synthesis_system, correction_human)
             corrected_violations = validate_allocation(
                 parse_allocation(corrected), budget, ticker_contexts,
-                short_threshold=short_thresh,
+                short_threshold=short_thresh, regime=regime,
             )
             # Keep the original report if the corrective pass made things worse
             if len(corrected_violations) < len(violations):

@@ -6,6 +6,8 @@ re-checks the parsed Allocation Score JSON against those rules so violations
 can trigger a corrective re-prompt or at least be surfaced in the report.
 """
 
+from tradingagents.allocation.regime import sizing_multiplier
+
 SINGLE_POSITION_CAP = 0.30   # max fraction of budget per position
 SECTOR_CAP = 0.35            # max fraction of budget per sector
 MAX_POSITIONS = 6            # max BUY + SHORT positions
@@ -15,6 +17,12 @@ MAX_POSITIONS = 6            # max BUY + SHORT positions
 EV_TO_IMPLIED_MIN = 0.25     # hard gate: a long needs EV/implied_move >= this
 FADE_RATE_MAX = 0.60         # soft flag: share of past beats that closed red
 COVERAGE_MIN = 0.70          # soft flag: avg |day-1 move| / implied move
+
+# Implied-move sizing cap (#15a): a position's plausible one-day loss
+# (amount × implied move) may not exceed this fraction of the budget. The
+# playbook suggests 0.75–1.0% on a levered book; scaled down by the #15b
+# regime multiplier (×0.5 risk-off, ×0.5 again on an FOMC/CPI collision).
+IMPLIED_MOVE_LOSS_CAP = 0.010
 
 _REL_TOL = 0.01              # 1% tolerance on budget arithmetic
 _PCT_TOL = 0.5               # tolerance (percentage points) on pct_of_budget
@@ -27,11 +35,17 @@ def _num(value, default=0.0) -> float:
         return default
 
 
+def _regime_multiplier(regime: dict | None, ctx: dict | None) -> float:
+    """#15b sizing multiplier: ×0.5 in risk-off, ×0.5 again on a macro collision."""
+    return sizing_multiplier(regime, (ctx or {}).get("macro_collisions"))
+
+
 def validate_allocation(
     alloc: dict,
     budget: int,
     contexts: list[dict],
     short_threshold: float = -5.0,
+    regime: dict | None = None,
 ) -> list[str]:
     """Check a parsed allocation dict against the council's sizing rules.
 
@@ -40,6 +54,8 @@ def validate_allocation(
         budget: Total capital in dollars.
         contexts: Ticker context dicts (need ticker, sector, weighted_score).
         short_threshold: weighted_score at or below which shorts are allowed.
+        regime: Optional #15b regime dict (regime.fetch_regime); risk-off halves
+            the implied-move loss cap, a per-ticker macro collision halves again.
 
     Returns:
         Human-readable violation strings; empty list means all checks passed.
@@ -123,6 +139,24 @@ def validate_allocation(
                     f"{ticker}: long has unfavorable payoff asymmetry (EV={ev:+.1f}%, "
                     f"EV/move={evr_str}) — non-positive expectancy into the print; "
                     f"skip or justify with a separate catalyst."
+                )
+
+        # Implied-move sizing cap (#15a/#15b): the position's plausible one-day
+        # loss (amount × implied move) may not exceed a fixed fraction of the
+        # budget, halved in risk-off tape and halved again on a macro collision.
+        # Applies to BUYs and SHORTs alike — the move cuts both ways.
+        ctx = ctx_by_ticker.get(ticker, {}) or {}
+        move = ctx.get("implied_move_pct")
+        if isinstance(move, (int, float)) and move > 0 and budget > 0:
+            mult = _regime_multiplier(regime, ctx)
+            max_amount = IMPLIED_MOVE_LOSS_CAP * mult * budget * 100 / move
+            if amount > max_amount * (1 + _REL_TOL):
+                mult_note = f" × {mult:g} regime multiplier" if mult < 1.0 else ""
+                violations.append(
+                    f"{ticker}: ${amount:,.0f} × ±{move:.1f}% implied move risks "
+                    f"${amount * move / 100:,.0f} in one session — the cap is "
+                    f"{IMPLIED_MOVE_LOSS_CAP:.1%} of budget{mult_note} "
+                    f"(max position ≈ ${max_amount:,.0f})."
                 )
 
     # Max positions

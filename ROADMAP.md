@@ -21,14 +21,16 @@ Items marked ⟐ are now **corroborated by the `learn` loop on real trade histor
 
 1. **#14 — Expectations-Gap & Payoff-Asymmetry engine** — **DONE** (14a asymmetry engine, 14b EV hard gate + soft fade/coverage downgrade, 14c run-up/crowding gate). Open follow-ups only: better `P(beat)` via #1 calibration, and premium-selling routing via #5. ⟐ The `learn` loop already de-weighted `beat` (0.7→0.55) and rewrote the earnings prompt around beat-quality / run-up / "priced-in" — exactly this thesis.
 2. **#9 — Peer earnings read-through** — **DONE** (2026-06-23, `earnings/peers.py`): curated peer map → EPS surprise + day-1 reaction for peers that reported in the last ~35d, feeding the brief prompt, a `Peers:` council line, and the beat-and-still-fall downgrade. Also shipped the **#17 log-schema-v2 prerequisite** (`trade_log.py` + `backfill-trades`).
-3. **#15 — Implied-move sizing cap + tactical regime gates** ⟐ (free; deterministic loss control; `learn` repeatedly asks for a macro risk-off overlay) ← NEXT
-4. **#10 — Post-earnings dislocation scanner** (free; a second, independent trade source)
-5. **#1 — Calibration extensions + `suggest-weights`** (turns the above into measured, self-tuning gates)
-6. **#16 — Trade management: exit map + post-earnings triage** ⟐ (high P&L leverage; the single most-repeated `learn` process note — wins closed too early; needs live position tracking)
-7. **#17 — Backtest harness** (validates every gate/threshold on your own log; gated on trade volume)
-8. **#6b — Shiller CAPE / Buffett indicator** (cheap structural regime context)
-9. **#11 — Multi-model ensemble** · **#3b — IBKR options pipeline** (IV rank / term structure / skew, once free signals are mined)
-10. Everything else (#4 sector memory, #5 options structures, #6a macro scraping, #7 social, #8 Hermes, #12 OSS analysts, #13 dream-mode)
+3. **#15 — Implied-move sizing cap + tactical regime gates** — **DONE** (2026-07-18, `allocation/regime.py` + validator/council wiring): hard implied-move loss cap (1% of budget), risk-off gate (SPX<50dma or VIX>22 → cap halves), FOMC/CPI collision gate (±2 sessions → halves again). Also shipped Sharpe/Sortino/MaxDD in `stats` (`trade_log.risk_stats`) and the `regime_flag` trade-log backfill.
+4. **#19 — Conditional "wait & decide" entries** (free; fourth council outcome WATCH + trigger level for low/mid-confidence quality names; reuses asymmetry/pricing artifacts) ← NEXT
+5. **#10 — Post-earnings dislocation scanner** (free; a second, independent trade source; #19 subsumes it for already-screened names)
+6. **#1 — Calibration extensions + `suggest-weights`** (turns the above into measured, self-tuning gates)
+7. **#16 — Trade management: exit map + post-earnings triage** ⟐ (high P&L leverage; the single most-repeated `learn` process note — wins closed too early; needs live position tracking)
+8. **#17 — Backtest harness** (validates every gate/threshold on your own log; gated on trade volume)
+9. **#20 — Pair trading / peer-hedged entries** (PEER_MAP-based hedge leg; needs a divergence heuristic — after #16, benefits from #15's regime gates)
+10. **#6b — Shiller CAPE / Buffett indicator** (cheap structural regime context; stacks with the #15 tactical gates)
+11. **#11 — Multi-model ensemble** · **#3b — IBKR options pipeline** (IV rank / term structure / skew, once free signals are mined)
+12. Everything else (#4 sector memory, #5 options structures, #6a macro scraping, #7 social, #8 Hermes, #12 OSS analysts, #13 dream-mode)
 
 > Source material for #14–#17 lives in `docs/research/earnings_playbook_v2.md`
 > (decision framework) and `docs/research/earnings_toolkit_ibkr_reference.py`
@@ -354,25 +356,29 @@ Items marked ⟐ are now **corroborated by the `learn` loop on real trade histor
 
 ---
 
-## #15 — Implied-Move Position Sizing & Tactical Regime Gates (HIGH priority, free)
+## #15 — Implied-Move Position Sizing & Tactical Regime Gates ✅ DONE (2026-07-18) — `tradingagents/allocation/regime.py`
 
 **Goal:** Let the implied move (not conviction alone) set position size, and cut sizing in hostile regimes. Deterministic loss control that drops into `allocation/validator.py` and the council sizing rules.
 
 > **Corroborated by `learn` (2026-06-16):** the self-improvement loop independently surfaced a **macro risk-off overlay** as a recurring process note across two runs (reduce size on yield spikes / geopolitical / oil shocks — cited losses: DLO, BKNG, GM, AG, REZI, OXY). It also recommended volatility-adjusted sizing. These can't be auto-applied as prompt edits, confirming the regime-gate work below is real and evidence-backed, not speculative.
 
-### 15a — Implied-move sizing cap
-- [ ] Add a hard cap so any single position's *implied-move loss* (`size × implied_move`) never exceeds a fixed % of NAV (playbook suggests 0.75–1.0% on a 1.8–1.9× levered book)
-- [ ] Effect: a ±10% implied-move name gets half the shares of a ±5% name — "sizing off the implied move, not conviction alone, is what keeps one bad print from dominating the month"
-- [ ] Enforce in `validator.py` alongside the existing 30% position / 35% sector caps
+### 15a — Implied-move sizing cap ✅
+- [x] Hard cap: a position's *implied-move loss* (`amount × implied_move`) may not exceed `IMPLIED_MOVE_LOSS_CAP` = **1.0% of budget** (playbook suggests 0.75–1.0%); tunable constant in `validator.py` for #17 to calibrate
+- [x] Effect: a ±10% implied-move name gets half the dollars of a ±5% name — enforced in `validate_allocation` (violation → corrective re-prompt → `⚠ Constraint Check`), applies to BUYs **and** SHORTs; the raw `implied_move_pct` is now on every ticker context. No implied move → no check (the prompt tells the LLM to size conservatively)
+- [x] Stated in the synthesis prompt with the live regime-scaled dollar cap
 
-### 15b — Tactical regime gates (distinct from #6b structural CAPE/Buffett)
-- [ ] **Risk-off gate:** SPX below its 50-dma or VIX > 22 → halve all earnings position sizes (in risk-off tape, beats get sold)
-- [ ] **Macro-collision gate:** FOMC/CPI within ±2 sessions of the print → halve again or skip (the reaction will be contaminated)
-- [ ] Inject regime flags into the council synthesis prompt and apply the multiplier in sizing
+### 15b — Tactical regime gates ✅ (distinct from #6b structural CAPE/Buffett)
+- [x] **Risk-off gate:** SPX below its 50-dma or VIX > 22 → the loss cap halves (×0.5). Regime fetched once per allocation run (`fetch_regime`, yfinance ^GSPC/^VIX, truncatable to trade_date for reproducible re-runs), persisted as **`regime.json` at the run root**, shown as a `=== MARKET REGIME ===` block in the synthesis prompt
+- [x] **Macro-collision gate:** FOMC/CPI within ±2 sessions of the print (static 2025–26 calendars in `regime.py`, business-day distance) → that ticker's cap halves again; per-ticker `Macro:` line in the council ticker sections ("⚠ COLLISION … halve or skip")
+- [x] Multiplier logic in `regime.sizing_multiplier` — single source used by both the prompt and the validator, so the gate is enforced, not merely suggested
+- [x] `backfill-trades` now fills `regime_flag` ("risk_off"/"normal") from the run's `regime.json` (#17 schema-v2 field, previously null-only)
+- **Live validation (2026-07-18):** first real fetch classified the tape **risk-off** (SPX 7,458 marginally below its 50-dma 7,465, VIX 18.8) — the gate binds immediately.
 
 ### Notes
-- VIX/SPX/50-dma and an econ-calendar check are cheap (yfinance + a static FOMC/CPI date list); no IBKR needed
+- VIX/SPX/50-dma and the econ-calendar check are cheap (yfinance + static FOMC/CPI date lists); no IBKR needed
+- **Maintenance:** the FOMC/CPI calendars in `regime.py` are static — extend them each year (Fed publishes dates years ahead; BLS each autumn)
 - #6b (Shiller/Buffett) is the slow structural governor; this is the fast tactical one — they stack
+- Thresholds (VIX 22, 1% cap, ±2 sessions, ×0.5 multipliers) are playbook priors — tunable constants for #17 to calibrate
 
 ---
 
@@ -418,7 +424,7 @@ Apply this rigour to every tunable threshold in #14/#15 (EV/implied 0.25, fade 0
 - [ ] **Monte Carlo on every parameter set** (not one): bootstrap/reshuffle the trade sequence per setting to get an *outcome distribution* (and drawdown distribution), not a single backtest number
 - [ ] **Cluster analysis** of the simulation results as a meta-check (do good settings cluster, or are they scattered noise?)
 - [ ] **In-sample / out-of-sample + walk-forward** validation before trusting any threshold live
-- [ ] **Risk-adjusted metrics** in `stats`: add Sharpe, Sortino, MaxDD, hit-rate, turnover (we currently only show win-rate / avg P&L)
+- [~] **Risk-adjusted metrics** in `stats`: ✅ Sharpe, Sortino, MaxDD shipped 2026-07-18 (`trade_log.risk_stats` — per-trade returns, equal-weighted, Sortino flags "∞" when no losers instead of dividing by zero); hit-rate already shown as win rate; turnover still open
 - [ ] Engine references when we outgrow a hand-rolled harness: **VectorBT** / **Zipline** (Python), **Nautilus** (Rust, multi-venue), **ZipLime** (AI idea→code→backtest)
 
 ### Log schema v2 (prerequisite — Part 5) ✅ DONE (2026-06-23) — `tradingagents/trade_log.py`
@@ -447,7 +453,7 @@ Apply this rigour to every tunable threshold in #14/#15 (EV/implied 0.25, fade 0
 - [x] **Insider-signal refinement** ✅ DONE (2026-06-23) — `tradingagents/allocation/insider.py`. Deterministically detects **cluster buys** (≥3 distinct net-buying insiders in 90d) and **sell→buy reversals** (sold in the older window, buying now), plus notable buys and net values; routine/programmatic selling is labelled "often routine" and NOT treated as bearish. Persisted to `insider.json`, shown on the council `Insider:` line + a synthesis rule (cluster/reversal = bullish confirmation, can lift a tier; selling discounted). Live-validated: it independently flagged the medtech reel's own example (BSX cluster buy). Thresholds tunable for #17.
   - [ ] Follow-up: **SEC Form-4 (EDGAR)** as a more complete/timely source than yfinance (yfinance insider data can be laggy/partial).
 - [ ] **Historical-relative valuation** in `fundamentals_scorer.py`: score valuation vs. the name's *own* historical median (the medtech reel: 17× EV/EBITDA vs. a 31× median), not just absolute metrics — cheap, strong context.
-- [ ] **Risk-adjusted stats** (also listed in #17): Sharpe / Sortino / MaxDD / hit-rate / turnover in the `stats` command.
+- [~] **Risk-adjusted stats** (also listed in #17): ✅ Sharpe / Sortino / MaxDD shipped 2026-07-18; turnover still open.
 
 ### Medium value — reinforce the regime/sizing layer (#15 / #6b)
 - [ ] **Macro overlay can veto strong bottom-up signals** — the medtech reel is the canonical case: compelling insider buys + cheap valuation, but tariffs / reimbursement cuts / FDA slowdowns / policy make it un-underwritable. The #15 overlay should be able to *downgrade or veto* even strong scores on sector-level policy headwinds.
@@ -469,6 +475,44 @@ Apply this rigour to every tunable threshold in #14/#15 (EV/implied 0.25, fade 0
 
 ---
 
+## #19 — Conditional "Wait & Decide" Entries (HIGH priority, free) ← NEXT
+
+**Goal:** A fourth council outcome — **WATCH** — alongside BUY/SHORT/SKIP, for names where the *business* is attractive but the *pre-print entry* is not (null EV, high fade rate, low coverage, heavy crowding, low/mid confidence). Instead of forcing a BUY-or-SKIP call, pre-commit a plan: skip the print, and if the stock sells off past a computed trigger level on results, buy the dislocation — quality names that gap down on an in-line print tend to rebound.
+
+### Sub-tasks
+- [ ] Council output schema: add `WATCH` direction with `trigger_price` (and `trigger_pct` below pre-print close) + one-line entry thesis; extend `parse_allocation` / `validator.py` (WATCH rows carry $0 at allocation time; reserve a stated amount from cash)
+- [ ] Trigger condition (reuses #14 artifacts, no new data): candidates are quality names (`fundamentals_score ≥ +2`) hitting the existing soft-downgrade paths — EV null + fade ≥ 60% / coverage ≤ 0.70, or crowding flags, or Low/Medium confidence with good fundamentals
+- [ ] Trigger level derived from saved artifacts: e.g. entry at ≥ implied move below pre-print close (the market overpaying to the downside), refined by `E[move|miss]` where computable
+- [ ] Synthesis prompt rule + a dedicated **Watchlist** section in `allocation.md` (ticker, trigger, size, thesis, expiry ~2–5 sessions post-print)
+- [ ] Surface the watchlist on the dashboard; flag-only, manual execution (no IBKR order placement — decided 2026-07-18)
+- [ ] Log resulting trades with `strategy: "wait_and_decide"` in `trades.json` so calibration tracks the strategy separately (mirrors #10's `dislocation` tag)
+
+### Notes
+- Fuses #10 (dislocation scanner) with #16's Gate-2 mechanical-drop logic, applied *proactively* at screen time to names we already analyzed — #10 remains useful for names we didn't screen
+- Directly monetises the #14a finding that quality names sell good prints: instead of just sizing down, wait for the fade and buy it
+- Decision (2026-07-18): flag-only v1; conditional IBKR orders would gate on #3b
+
+---
+
+## #20 — Pair Trading / Peer-Hedged Entries (MEDIUM priority)
+
+**Goal:** When conviction is name-specific but the sector/industry reaction is uncertain, offer a paired trade: long the screened name, short a correlated peer (or vice-versa for shorts). If the industry moves against us but our name outperforms the pair partner, the spread still pays.
+
+### Sub-tasks
+- [ ] Hedge-candidate pool from `earnings/peers.py`'s curated `PEER_MAP` (decided 2026-07-18: specific peer stock, not the sector ETF)
+- [ ] Divergence heuristic: prefer a peer **not reporting within the same window** (avoid stacking two binary events), with correlated price history (≥ ~0.6 over 6m) but a *weaker* current setup (lower fundamentals/weighted score, worse peer read-through)
+- [ ] Council integration: optional `hedge` field per allocation row (`{ticker, direction, amount}`); synthesis prompt rule for *when* to propose a pair (elevated crowding/sector risk + name-specific conviction) — suggestion, not default
+- [ ] Validator: hedge legs respect the same caps; net sector exposure computed with hedges included
+- [ ] `trades.json`: `paired_with` link field so combined P&L is evaluated as one position in stats/calibration
+- [ ] Flag-only, manual execution (same as #19)
+
+### Notes
+- Most valuable exactly when #14c crowding or #9 `sector_bar_elevated` flags fire — gate the suggestion on those signals rather than always offering a pair
+- Correlation needs ~6m of daily closes for both legs — cheap via the existing yfinance plumbing
+- Sequenced after #16: exit management matters even more for two-legged positions
+
+---
+
 ## Quick wins (no dedicated section above)
 
 - [x] Add `--budget` flag to `tradingagents screen` so the $100k allocation budget is configurable at runtime
@@ -477,4 +521,4 @@ Apply this rigour to every tunable threshold in #14/#15 (EV/implied 0.25, fade 0
 
 ---
 
-*Last updated: 2026-06-23*
+*Last updated: 2026-07-18*

@@ -560,6 +560,22 @@ def stats():
                 dr = dw / len(dir_trades) * 100
                 dir_color = "green" if direction == "BUY" else "red"
                 console.print(f"  [{dir_color}]{direction}[/{dir_color}]: {len(dir_trades)} trade(s), win rate [cyan]{dr:.0f}%[/cyan]")
+
+        # Risk-adjusted stats (#17/#18) — per-trade returns, equal-weighted
+        from tradingagents.trade_log import risk_stats
+        rs = risk_stats(all_trades)
+        if rs["n"] >= 2:
+            sortino_str = (
+                "[green]∞ (no losing trades)[/green]" if rs["no_losses"]
+                else f"[cyan]{rs['sortino']:.2f}[/cyan]" if rs["sortino"] is not None
+                else "[dim]n/a[/dim]"
+            )
+            sharpe_str = f"[cyan]{rs['sharpe']:.2f}[/cyan]" if rs["sharpe"] is not None else "[dim]n/a[/dim]"
+            console.print(
+                f"  [bold]Risk-adjusted[/bold] (per-trade, {rs['n']} trades): "
+                f"Sharpe {sharpe_str}  |  Sortino {sortino_str}  |  "
+                f"Max drawdown [cyan]{rs['max_drawdown_pp']:.1f}pp[/cyan]"
+            )
         console.print()
     else:
         console.print("[dim]No trades logged yet. Run 'uv run tradingagents reflect' after closing a trade.[/dim]\n")

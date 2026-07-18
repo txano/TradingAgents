@@ -111,5 +111,62 @@ class MovesAfterTests(unittest.TestCase):
         self.assertIsNone(out["move_d20"])  # not enough bars
 
 
+@pytest.mark.unit
+class RiskStatsTests(unittest.TestCase):
+    """Sharpe / Sortino / max drawdown from per-trade returns (#17/#18)."""
+
+    def test_hand_computed_values(self):
+        trades = [
+            {"pnl_pct": 10.0, "exit_date": "2026-01-01"},
+            {"pnl_pct": -5.0, "exit_date": "2026-01-02"},
+            {"pnl_pct": 3.0, "exit_date": "2026-01-03"},
+        ]
+        rs = tl.risk_stats(trades)
+        # mean 8/3, pop std ≈ 6.13, downside dev = sqrt(25/3) ≈ 2.89
+        self.assertEqual(rs["n"], 3)
+        self.assertAlmostEqual(rs["sharpe"], 0.44, places=2)
+        self.assertAlmostEqual(rs["sortino"], 0.92, places=2)
+        self.assertEqual(rs["max_drawdown_pp"], 5.0)  # peak 10 → trough 5
+        self.assertFalse(rs["no_losses"])
+
+    def test_no_losing_trades_flags_instead_of_dividing_by_zero(self):
+        rs = tl.risk_stats([
+            {"pnl_pct": 5.0, "exit_date": "2026-01-01"},
+            {"pnl_pct": 2.0, "exit_date": "2026-01-02"},
+        ])
+        self.assertIsNone(rs["sortino"])
+        self.assertTrue(rs["no_losses"])
+        self.assertIsNotNone(rs["sharpe"])
+
+    def test_fewer_than_two_trades_yields_nones(self):
+        self.assertIsNone(tl.risk_stats([])["sharpe"])
+        self.assertIsNone(tl.risk_stats([{"pnl_pct": 4.0}])["sortino"])
+
+    def test_return_reconstructed_from_pnl_when_pct_missing(self):
+        trades = [
+            {"pnl": 100.0, "shares": 10, "entry_price": 100.0, "exit_date": "2026-01-01"},  # +10%
+            {"pnl_pct": -5.0, "exit_date": "2026-01-02"},
+        ]
+        rs = tl.risk_stats(trades)
+        self.assertEqual(rs["n"], 2)
+
+    def test_drawdown_uses_exit_date_order_not_list_order(self):
+        # Loss happens first chronologically; listed last. Cum path: -10 → +20.
+        trades = [
+            {"pnl_pct": 30.0, "exit_date": "2026-02-01"},
+            {"pnl_pct": -10.0, "exit_date": "2026-01-01"},
+        ]
+        rs = tl.risk_stats(trades)
+        self.assertEqual(rs["max_drawdown_pp"], 10.0)
+
+    def test_unparseable_returns_are_skipped(self):
+        rs = tl.risk_stats([
+            {"pnl_pct": "not-a-number"},
+            {"pnl_pct": 4.0, "exit_date": "2026-01-01"},
+            {"pnl_pct": -2.0, "exit_date": "2026-01-02"},
+        ])
+        self.assertEqual(rs["n"], 2)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -14,6 +14,7 @@ from tradingagents.allocation.pricing import fetch_pricing_context, format_prici
 from tradingagents.allocation.asymmetry import build_asymmetry, format_asymmetry
 from tradingagents.allocation.crowding import fetch_crowding, format_crowding
 from tradingagents.allocation.insider import build_insider, format_insider
+from tradingagents.allocation.regime import fetch_regime, format_collisions, macro_collisions
 from tradingagents.earnings.peers import build_peer_readthrough, format_peer_oneliner
 from tradingagents.allocation.weights import apply_weights, load_weights
 from tradingagents.learning.lessons import distill_lessons, load_cached_lessons, load_reflections
@@ -81,6 +82,24 @@ class AllocationLayer:
             else:
                 lessons_block = ""
 
+        # Market regime (#15b) — global per run; cached in the run dir so
+        # re-running `allocate` on an old folder reproduces the original regime.
+        regime = None
+        regime_path = Path(screening_dir) / "regime.json" if screening_dir else None
+        if regime_path and regime_path.exists():
+            try:
+                regime = json.loads(regime_path.read_text(encoding="utf-8"))
+            except Exception:
+                regime = None
+        if regime is None:
+            try:
+                regime = fetch_regime(trade_date)
+                if regime_path:
+                    regime_path.write_text(json.dumps(regime, indent=2), encoding="utf-8")
+            except Exception as exc:
+                logger.warning("regime fetch failed: %s", exc)
+                regime = None
+
         if self.use_council:
             report = run_council(
                 llm=self.llm,
@@ -91,6 +110,7 @@ class AllocationLayer:
                 lessons_block=lessons_block,
                 progress_cb=progress_cb,
                 advisor_llms=self.advisor_llms,
+                regime=regime,
             )
         else:
             analyst = create_allocation_analyst(self.llm, self.budget, trade_date)
@@ -225,6 +245,8 @@ class AllocationLayer:
                     except Exception:
                         pricing = None
                 ctx["pricing_summary"] = format_pricing(pricing)
+                # Raw implied move for the #15a loss-cap check in validator.py
+                ctx["implied_move_pct"] = (pricing or {}).get("implied_move_pct")
 
                 # Payoff asymmetry / EV (#14a) — cached at screening time, live fallback
                 asym = None
@@ -305,6 +327,7 @@ class AllocationLayer:
                 ctx.setdefault("growth_quality",       "Medium")
                 ctx.setdefault("fundamentals_summary", "")
                 ctx.setdefault("pricing_summary",      "Not available")
+                ctx.setdefault("implied_move_pct",     None)
                 ctx.setdefault("asymmetry",            {})
                 ctx.setdefault("asymmetry_summary",    "Not available")
                 ctx.setdefault("crowding",             {})
@@ -313,6 +336,11 @@ class AllocationLayer:
                 ctx.setdefault("peer_summary",         "Not available")
                 ctx.setdefault("insider",              {})
                 ctx.setdefault("insider_summary",      "Not available")
+
+            # FOMC/CPI collision check (#15b) — pure static-calendar lookup,
+            # needs only the earnings date so it runs with or without artifacts.
+            ctx["macro_collisions"] = macro_collisions(ctx.get("earnings_date"))
+            ctx["macro_summary"] = format_collisions(ctx["macro_collisions"])
 
             # Historical screening data
             history = self._load_historical_scores(ticker, base) if base else []

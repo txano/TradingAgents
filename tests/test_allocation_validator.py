@@ -283,6 +283,61 @@ class CrowdingAdvisoryTests(unittest.TestCase):
 
 
 @pytest.mark.unit
+class ImpliedMoveCapTests(unittest.TestCase):
+    """#15a implied-move loss cap + #15b regime scaling."""
+
+    def _ctx(self, move, collisions=None):
+        return [{
+            "ticker": "AAA", "sector": "Tech", "weighted_score": 12.0,
+            "implied_move_pct": move,
+            "macro_collisions": collisions or [],
+        }]
+
+    def test_within_cap_passes(self):
+        # ±5% move: cap allows 1%/5% = 20% of budget = $20,000
+        alloc = _alloc([_row("AAA", "BUY", 20_000)])
+        self.assertEqual(validate_allocation(alloc, BUDGET, self._ctx(5.0)), [])
+
+    def test_oversized_position_violates(self):
+        # $25,000 × ±8% = $2,000 one-day loss > $1,000 cap
+        alloc = _alloc([_row("AAA", "BUY", 25_000)])
+        violations = validate_allocation(alloc, BUDGET, self._ctx(8.0))
+        self.assertTrue(any("implied move" in v for v in violations))
+
+    def test_cap_applies_to_shorts_too(self):
+        ctx = self._ctx(8.0)
+        ctx[0]["weighted_score"] = -8.0
+        alloc = _alloc([_row("AAA", "SHORT", 25_000, conviction="High")])
+        violations = validate_allocation(alloc, BUDGET, ctx)
+        self.assertTrue(any("implied move" in v for v in violations))
+
+    def test_no_implied_move_no_check(self):
+        alloc = _alloc([_row("AAA", "BUY", 30_000)])
+        self.assertEqual(validate_allocation(alloc, BUDGET, self._ctx(None)), [])
+
+    def test_risk_off_halves_the_cap(self):
+        # $15,000 × ±5% = $750 loss: fine normally (cap $1,000),
+        # violates in risk-off (cap $500)
+        alloc = _alloc([_row("AAA", "BUY", 15_000)])
+        ctx = self._ctx(5.0)
+        self.assertEqual(validate_allocation(alloc, BUDGET, ctx), [])
+        violations = validate_allocation(alloc, BUDGET, ctx, regime={"risk_off": True})
+        self.assertTrue(any("implied move" in v for v in violations))
+        self.assertTrue(any("0.5" in v for v in violations))
+
+    def test_macro_collision_halves_again(self):
+        # $6,000 × ±5% = $300 loss: fine in risk-off alone (cap $500),
+        # violates with a collision stacked on top (cap $250)
+        alloc = _alloc([_row("AAA", "BUY", 6_000)])
+        regime = {"risk_off": True}
+        clear = self._ctx(5.0)
+        colliding = self._ctx(5.0, collisions=["FOMC 2026-07-29 (+1 sessions)"])
+        self.assertEqual(validate_allocation(alloc, BUDGET, clear, regime=regime), [])
+        violations = validate_allocation(alloc, BUDGET, colliding, regime=regime)
+        self.assertTrue(any("implied move" in v for v in violations))
+
+
+@pytest.mark.unit
 class ParseAllocationTests(unittest.TestCase):
     def test_prefers_anchored_block(self):
         report = (
