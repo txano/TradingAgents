@@ -190,16 +190,20 @@ def _build_reports_data(reports_dir: Path, trades_path: Path) -> dict:
     for d in analysis_dirs:
         if not d.is_dir():
             continue
-        brief_path = d / "earnings_brief.md"
-        if not brief_path.exists():
+        brief_path    = d / "earnings_brief.md"
+        complete_path = d / "complete_report.md"
+        report_path   = brief_path if brief_path.exists() else (complete_path if complete_path.exists() else None)
+        if not report_path:
             continue
-        brief_raw = brief_path.read_text(encoding="utf-8")
+        brief_raw = report_path.read_text(encoding="utf-8")
         parts2    = d.name.split("_")
         ticker2   = parts2[0] if parts2 else d.name
         raw_date  = parts2[1] if len(parts2) > 1 else ""
         date2     = f"{raw_date[:4]}-{raw_date[4:6]}-{raw_date[6:8]}" if len(raw_date) >= 8 else ""
         capped    = brief_raw[:15_000] if len(brief_raw) > 15_000 else brief_raw
-        standalone.append({"id": d.name, "ticker": ticker2, "date": date2, "earnings_brief_md": capped})
+        pm_path   = d / "5_portfolio" / "decision.md"
+        pm_md     = pm_path.read_text(encoding="utf-8")[:12_000] if pm_path.exists() else None
+        standalone.append({"id": d.name, "ticker": ticker2, "date": date2, "earnings_brief_md": capped, "portfolio_decision_md": pm_md, "report_type": "brief" if brief_path.exists() else "analysis"})
 
     reflections: list = []
     reflections_dir = reports_dir / "reflections"

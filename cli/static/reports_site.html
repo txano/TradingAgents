@@ -319,6 +319,15 @@ select option{background:var(--surface)}
 @keyframes bnrpulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.4;transform:scale(.8)}}
 .bnr-close{margin-left:auto;background:none;border:none;color:var(--warn);cursor:pointer;font-size:14px;opacity:.65;line-height:1;padding:2px 5px;border-radius:3px;flex-shrink:0}
 .bnr-close:hover{opacity:1}
+#bnr-text{cursor:pointer;flex:1;text-underline-offset:2px}
+#bnr-text:hover{text-decoration:underline dotted}
+
+/* ── Banner log modal ──────────────────────────────────────── */
+#bnr-log-modal{position:fixed;inset:0;z-index:200;background:rgba(0,0,0,0.7);backdrop-filter:blur(4px);display:none;align-items:center;justify-content:center}
+#bnr-log-modal.open{display:flex}
+#bnr-log-box{background:var(--surface);border:1px solid var(--border2);border-radius:var(--r);width:min(700px,94vw);max-height:82vh;display:flex;flex-direction:column;box-shadow:0 24px 72px rgba(0,0,0,0.55);animation:slideIn .18s ease;overflow:hidden}
+#bnr-log-hd{display:flex;align-items:center;gap:10px;padding:13px 18px;border-bottom:1px solid var(--border);flex-shrink:0;background:rgba(0,0,0,0.12)}
+#bnr-log-pre{flex:1;overflow-y:auto;padding:14px 18px;font-size:11.5px;font-family:var(--mono);white-space:pre-wrap;word-break:break-all;color:var(--dim);margin:0;background:rgba(0,0,0,0.22);line-height:1.55;min-height:120px}
 
 /* ── Mobile sidebar ────────────────────────────────────────── */
 #mob-toggle{display:none;position:fixed;top:11px;left:12px;z-index:100;background:var(--card);border:1px solid var(--border2);border-radius:7px;width:36px;height:36px;align-items:center;justify-content:center;cursor:pointer;font-size:17px;color:var(--text);box-shadow:0 2px 8px rgba(0,0,0,0.3)}
@@ -365,8 +374,19 @@ select option{background:var(--surface)}
 <div id="mob-bg" onclick="mobClose()"></div>
 <div id="run-banner">
   <span class="bnr-dot"></span>
-  <span id="bnr-text">Running…</span>
+  <span id="bnr-text" onclick="openBannerLog()">Running…</span>
   <button class="bnr-close" onclick="hideBanner()" aria-label="Dismiss">✕</button>
+</div>
+<div id="bnr-log-modal" onclick="if(event.target===this)closeBannerLog()">
+  <div id="bnr-log-box">
+    <div id="bnr-log-hd">
+      <span class="bnr-dot"></span>
+      <span id="bnr-log-title" style="flex:1;font-weight:600;font-size:13px">Job Log</span>
+      <span id="bnr-log-status" class="job-status running" style="font-size:10px">running</span>
+      <button class="bnr-close" onclick="closeBannerLog()" style="margin-left:10px;color:var(--dim)">✕</button>
+    </div>
+    <pre id="bnr-log-pre"></pre>
+  </div>
 </div>
 
 <nav id="sidebar">
@@ -672,6 +692,8 @@ function renderCalDayCard(d, day, scrIdx) {
   const screenedCount = entries.filter(e=>(scrIdx[e.ticker]||[]).length>0).length;
   const sc = n => n!=null?`<span class="${n>0?'c-win':n<0?'c-loss':'c-dim'}" style="font-weight:700;font-family:var(--mono)">${n>=0?'+':''}${n}</span>`:'<span style="color:var(--muted)">—</span>';
 
+  const dayRun = (DATA.screening_runs||[]).find(r=>r.earnings_date===d && r.allocation_md);
+
   const depthLabel = d => { const n=parseInt(d)||0; return n<=1?'Shallow':n<=3?'Medium':'Deep'; };
   const rows = entries.map(e=>{
     const scrs = (scrIdx[e.ticker]||[]).filter(s => !s.run.earnings_date || s.run.earnings_date === d);
@@ -734,6 +756,7 @@ function renderCalDayCard(d, day, scrIdx) {
         <div class="cal-day-title">${fmtCalDay(d)}</div>
         <div class="cal-day-sub">${entries.length} companies · ${screenedCount} screened · fetched ${fetchedAt}</div>
       </div>
+      ${dayRun?`<button class="ab" style="margin-right:8px" onclick="event.stopPropagation();openDetail('Allocation — ${fmtCalDay(d)}',md(DATA.screening_runs.find(x=>x.id==='${dayRun.id}').allocation_md))">Allocation</button>`:''}
       <button class="cal-screen-btn" onclick="event.stopPropagation();calScreenDay('${d}')">Screen Selected ▶</button>
     </div>
     <div id="cal-bd-${d}" style="display:none">
@@ -896,7 +919,7 @@ async function runScreenModal(){
     const st=$('sm-status');if(st){st.className='job-status error';st.textContent='✕ error';}
     return;
   }
-  _bnrShow('screen');
+  _bnrShow('screen',jobId);
   const proto=location.protocol==='https:'?'wss:':'ws:';
   const ws=new WebSocket(`${proto}//${location.host}/ws/${jobId}`);
   _smWs=ws;
@@ -904,7 +927,10 @@ async function runScreenModal(){
     if(e.data==='__DONE__'){
       _bnrHide('screen');
       const st=$('sm-status');if(st){st.className='job-status done';st.textContent='✓ done';}
-      const dr=$('sm-done-row');if(dr){dr.style.display='flex';dr.innerHTML=`<button class="btn-run" onclick="location.reload()">Reload to see results</button><button class="dp-btn" onclick="closeScreenModal()" style="margin-left:6px">Close</button>`;}
+      // Pre-fetch fresh data so Screenings view is ready immediately
+      _screeningsRefreshing=false;
+      fetch('/api/data').then(r=>r.ok?r.json():null).then(fresh=>{if(fresh)Object.assign(DATA,fresh);}).catch(()=>{});
+      const dr=$('sm-done-row');if(dr){dr.style.display='flex';dr.innerHTML=`<button class="btn-run" onclick="closeScreenModal();go('screenings')">View in Screenings</button><button class="dp-btn" onclick="closeScreenModal()" style="margin-left:6px">Close</button>`;}
       return;
     }
     if(e.data==='__ERROR__'){_bnrHide('screen');const st=$('sm-status');if(st){st.className='job-status error';st.textContent='✕ error';}return;}
@@ -913,11 +939,23 @@ async function runScreenModal(){
   ws.onerror=()=>{_bnrHide('screen');const st=$('sm-status');if(st){st.className='job-status error';st.textContent='✕ ws error';}};
 }
 
+let _screeningsRefreshing=false;
 function renderScreenings(){
   const today=new Date().toISOString().slice(0,10);
   const calFrom=nextWeekdayStr(today,0), calTo=nextWeekdayStr(calFrom,4);
   const runs=DATA.screening_runs||[];
   const sa=DATA.standalone_analyses||[];
+  // Background-refresh data so newly completed runs appear without a page reload
+  if(!_screeningsRefreshing){
+    _screeningsRefreshing=true;
+    fetch('/api/data').then(r=>r.ok?r.json():null).then(fresh=>{
+      _screeningsRefreshing=false;
+      if(!fresh) return;
+      const oldCount=(DATA.screening_runs||[]).length;
+      Object.assign(DATA,fresh);
+      if((fresh.screening_runs||[]).length!==oldCount&&currentView()==='screenings') renderScreenings();
+    }).catch(()=>{_screeningsRefreshing=false;});
+  }
 
   let h=`<div class="ph"><h2>Screenings</h2><p>${runs.length} run${runs.length!==1?'s':''} · fetch the earnings calendar below, select tickers to screen, or expand past runs to review results</p></div>
 
@@ -969,10 +1007,11 @@ function renderScreenings(){
   if(sa.length){
     h+=`<hr class="divider"><div class="sec-hd" style="margin-bottom:14px"><div class="sec-title">Single-Ticker Analyses</div></div>`;
     sa.forEach(a=>{
+      const label=a.report_type==='analysis'?'Analysis Report':'Earnings Brief';
       h+=`<div class="lc" onclick="openDetail('${esc(a.ticker)} — ${esc(a.date)}',md(DATA.standalone_analyses.find(x=>x.id==='${a.id}').earnings_brief_md))">
         <div class="lc-icon" style="font-family:var(--mono);font-size:11px;font-weight:800">${esc(a.ticker)}</div>
         <div class="lc-body">
-          <div class="lc-title">${esc(a.ticker)} — Earnings Brief</div>
+          <div class="lc-title">${esc(a.ticker)} — ${label}</div>
           <div class="lc-sub">${esc(a.date)} · ${esc(a.id)}</div>
         </div>
         <div class="lc-meta"><span style="font-size:11px;color:var(--accent)">Read →</span></div>
@@ -1595,7 +1634,7 @@ async function runJob(type, prefix){
     return;
   }
 
-  _bnrShow(type);
+  _bnrShow(type,jobId);
 
   // Stream via WebSocket
   if(_activeWs) { try{_activeWs.close();}catch(e){} }
@@ -1609,6 +1648,11 @@ async function runJob(type, prefix){
       statusEl.className = 'job-status done';
       statusEl.textContent = '✓ done';
       btn.disabled = false;
+      // Refresh screenings data in the background so it's ready when user navigates there
+      if(type==='screen'||type==='analyze'||type==='allocate'){
+        _screeningsRefreshing=false;
+        fetch('/api/data').then(r=>r.ok?r.json():null).then(fresh=>{if(fresh)Object.assign(DATA,fresh);}).catch(()=>{});
+      }
       return;
     }
     if(e.data === '__ERROR__'){
@@ -1886,14 +1930,15 @@ async function renderPerformance(){
 
 // ── Activity banner ────────────────────────────────────────────────────────────
 let _bnrDismissed=false;
-let _bnrActiveJobs=new Set();
-const _bnrLabels={screen:'Screening',analyze:'Analysis',calibrate:'Calibration',reflect:'Reflection'};
+let _bnrActiveJobs=new Map(); // type -> jobId
+const _bnrLabels={screen:'Screening',analyze:'Analysis',calibrate:'Calibration',reflect:'Reflection',improve:'Improvement',allocate:'Allocation'};
+let _bnrLogWs=null;
 
 function hideBanner(){_bnrDismissed=true;$('run-banner').classList.remove('visible');}
 
-function _bnrShow(type){
+function _bnrShow(type,jobId){
   _bnrDismissed=false;
-  _bnrActiveJobs.add(type);
+  _bnrActiveJobs.set(type,jobId||null);
   _bnrUpdate();
 }
 function _bnrHide(type){
@@ -1903,26 +1948,55 @@ function _bnrHide(type){
 function _bnrUpdate(){
   const banner=$('run-banner');
   if(!_bnrDismissed&&_bnrActiveJobs.size>0){
-    const names=[..._bnrActiveJobs].map(t=>_bnrLabels[t]||t);
-    $('bnr-text').textContent=names.join(', ')+' running…';
+    const names=[..._bnrActiveJobs.keys()].map(t=>_bnrLabels[t]||t);
+    $('bnr-text').textContent=names.join(', ')+' running — tap to view log';
     banner.classList.add('visible');
   } else if(_bnrActiveJobs.size===0){
     banner.classList.remove('visible');
   }
 }
 
+function openBannerLog(){
+  const entries=[..._bnrActiveJobs.entries()];
+  if(!entries.length) return;
+  const [type,jobId]=entries[0];
+  if(!jobId) return;
+  const logEl=$('bnr-log-pre');
+  $('bnr-log-title').textContent=(_bnrLabels[type]||type)+' Log';
+  $('bnr-log-status').className='job-status running';
+  $('bnr-log-status').textContent='running';
+  logEl.textContent='';
+  $('bnr-log-modal').classList.add('open');
+  if(_bnrLogWs){try{_bnrLogWs.close();}catch(e){}}
+  const proto=location.protocol==='https:'?'wss:':'ws:';
+  const ws=new WebSocket(`${proto}//${location.host}/ws/${jobId}`);
+  _bnrLogWs=ws;
+  ws.onmessage=e=>{
+    if(e.data==='__DONE__'){$('bnr-log-status').className='job-status done';$('bnr-log-status').textContent='done';return;}
+    if(e.data==='__ERROR__'){$('bnr-log-status').className='job-status error';$('bnr-log-status').textContent='error';return;}
+    logEl.textContent+=e.data+'\n';
+    logEl.scrollTop=logEl.scrollHeight;
+  };
+  ws.onerror=()=>{$('bnr-log-status').className='job-status error';$('bnr-log-status').textContent='connection error';};
+  ws.onclose=()=>{ if(logEl.textContent&&!logEl.textContent.endsWith('\n')) logEl.textContent+='\n'; };
+}
+function closeBannerLog(){
+  $('bnr-log-modal').classList.remove('open');
+  if(_bnrLogWs){try{_bnrLogWs.close();}catch(e){}_bnrLogWs=null;}
+}
+
 async function _pollJobs(){
-  // Polling keeps the banner in sync if user opens the page while a job is already running
   try{
     const res=await fetch('/api/jobs');
     if(!res.ok)return;
     const jobs=await res.json();
     const running=Array.isArray(jobs)?jobs.filter(j=>j.status==='running'):[];
     if(running.length){
+      running.forEach(j=>{ if(!_bnrActiveJobs.has(j.type)) _bnrActiveJobs.set(j.type,j.id); });
       if(!_bnrDismissed){
         const names=running.map(j=>_bnrLabels[j.type]||j.type);
         const txt=running.length>1?`${running.length} jobs (${names.join(', ')})`:names[0];
-        $('bnr-text').textContent=txt+' running…';
+        $('bnr-text').textContent=txt+' running — tap to view log';
         $('run-banner').classList.add('visible');
       }
     } else if(_bnrActiveJobs.size===0){
