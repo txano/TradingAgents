@@ -4,6 +4,7 @@ import asyncio
 import datetime
 import queue
 import threading
+import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -34,6 +35,13 @@ app = FastAPI(title="TradingAgents", docs_url=None, redoc_url=None)
 
 _jobs: dict[str, dict] = {}
 _JOBS_LOCK = threading.Lock()
+
+# Human labels for the activity banner; also used by the durable registry.
+_JOB_LABELS = {
+    "screen": "Screening", "analyze": "Analysis", "calibrate": "Calibration",
+    "reflect": "Reflection", "improve": "Improvement", "allocate": "Allocation",
+    "resume": "Resume",
+}
 
 # --------------------------------------------------------------------------- #
 # Calendar storage
@@ -102,6 +110,15 @@ def _new_job(job_type: str, params: dict) -> str:
             "log": [],
             "queue": queue.Queue(),
         }
+    # Mirror into the durable registry so the job stays visible if this process
+    # dies — the in-memory dict above does not survive a restart.
+    try:
+        from cli import jobs_registry
+        jobs_registry.register(job_type, job_id=job_id, params=params,
+                               label=_JOB_LABELS.get(job_type, job_type),
+                               reports_root=Path("reports"))
+    except Exception:
+        pass
     return job_id
 
 
@@ -113,13 +130,30 @@ def _log(job_id: str, msg: str) -> None:
         job["queue"].put(msg)
 
 
-def _finish(job_id: str, success: bool = True) -> None:
+def _job_cancelled(job_id: str) -> bool:
+    """Has a stop been requested for this job? Safe to call from any worker."""
+    try:
+        from cli import jobs_registry
+        return jobs_registry.is_cancelled(job_id, reports_root=Path("reports"))
+    except Exception:
+        return False
+
+
+def _finish(job_id: str, success: bool = True, cancelled: bool = False) -> None:
     sentinel = "__DONE__" if success else "__ERROR__"
+    cancelled = cancelled or _job_cancelled(job_id)
     with _JOBS_LOCK:
         job = _jobs.get(job_id)
     if job:
-        job["status"] = "done" if success else "error"
+        job["status"] = "cancelled" if cancelled else ("done" if success else "error")
         job["queue"].put(sentinel)
+    try:
+        from cli import jobs_registry
+        status = (jobs_registry.CANCELLED if cancelled
+                  else jobs_registry.DONE if success else jobs_registry.ERROR)
+        jobs_registry.finish(job_id, status, reports_root=Path("reports"))
+    except Exception:
+        pass
 
 
 # --------------------------------------------------------------------------- #
@@ -129,8 +163,10 @@ def _finish(job_id: str, success: bool = True) -> None:
 def _build_config(params: dict) -> tuple[dict, list[str]]:
     config = DEFAULT_CONFIG.copy()
     config["llm_provider"] = params.get("provider", "deepseek").lower()
-    config["quick_think_llm"] = params.get("quick_model", "deepseek-chat")
-    config["deep_think_llm"] = params.get("deep_model", "deepseek-chat")
+    config["quick_think_llm"] = params.get("quick_model", "deepseek-v4-flash")
+    # v4-pro is safe again now that DeepSeek calls stream by default; it drops
+    # ~2/3 of long generations mid-response when not streamed (model_catalog.py).
+    config["deep_think_llm"] = params.get("deep_model", "deepseek-v4-pro")
     config["max_debate_rounds"] = int(params.get("depth", 1))
     config["max_risk_discuss_rounds"] = int(params.get("depth", 1))
     config["backend_url"] = params.get("backend_url") or None
@@ -170,6 +206,10 @@ def _run_screen(job_id: str, params: dict) -> None:
         import json as _json_meta
         _meta = {
             "run_type": "earnings" if earnings_date else "screening",
+            # The submitted list is the only authoritative record of what this
+            # run was meant to cover — a filtered subset of a calendar day is
+            # indistinguishable from a run that died early once it is lost.
+            "tickers": tickers,
             "earnings_date": earnings_date or None,
             "trade_date": trade_date,
             "depth": int(params.get("depth", 1)),
@@ -179,6 +219,15 @@ def _run_screen(job_id: str, params: dict) -> None:
             "run_at": datetime.datetime.now().isoformat(),
         }
         (screening_dir / "metadata.json").write_text(_json_meta.dumps(_meta, indent=2), encoding="utf-8")
+
+        # Now that the folder and ticker count exist, the registry can report progress.
+        try:
+            from cli import jobs_registry
+            jobs_registry.update(job_id, reports_root=Path("reports"),
+                                 run_dir=str(screening_dir), total=len(tickers),
+                                 label=f"Screening {screening_dir.name}")
+        except Exception:
+            pass
 
         log(f"Tickers ({len(tickers)}): {', '.join(tickers)}")
         log(f"Date: {trade_date}  |  Earnings date: {earnings_date or '—'}  |  Depth: {params.get('depth', 1)}  |  Workers: {workers}  |  Budget: ${budget:,}")
@@ -190,6 +239,12 @@ def _run_screen(job_id: str, params: dict) -> None:
         results_lock = threading.Lock()
 
         def process(ticker: str, worker_config: dict) -> None:
+            # Cooperative stop: a queued ticker is simply never started. One
+            # already inside screen_ticker runs to completion — we cannot
+            # interrupt a thread, and killing the PID would kill the server.
+            if _job_cancelled(job_id):
+                log(f"[{ticker}] skipped — stop requested")
+                return
             # Shared with the CLI `screen` command so both write the same artifacts
             # (pricing/asymmetry/crowding/peers.json) into the same layout.
             ticker_dir = screening_dir / ticker
@@ -224,6 +279,11 @@ def _run_screen(job_id: str, params: dict) -> None:
                     except Exception:
                         pass
 
+        # Stopped part-way: keep the table for whatever did finish (it is what
+        # `resume` reads back), but do not spend an 11-call council on a
+        # deliberately partial screen.
+        stopped = _job_cancelled(job_id)
+
         # Save results table
         sorted_results = sorted(results, key=lambda r: r.get("total_score", 0), reverse=True)
         write_screening_table(
@@ -240,6 +300,11 @@ def _run_screen(job_id: str, params: dict) -> None:
 
         # Allocation
         log("")
+        if stopped:
+            log(f"Stopped by request — {len(sorted_results)} of {len(tickers)} screened, "
+                f"allocation skipped. Use Resume to finish this run.")
+            _finish(job_id, True, cancelled=True)
+            return
         log("Running Allocation Manager...")
         try:
             allocation_report = run_allocation(
@@ -540,6 +605,64 @@ def _run_improve(job_id: str, params: dict) -> None:
         _finish(job_id, False)
 
 
+def _run_resume(job_id: str, params: dict) -> None:
+    """Finish an interrupted run: screen what's missing, rebuild the table, allocate.
+
+    Thin wrapper — the work lives in `cli.commands.resume` so the CLI `resume`
+    command and this endpoint can never drift.
+    """
+    log = lambda msg: _log(job_id, msg)
+    try:
+        from cli.commands.resume import DEFAULT_BUDGET, DEFAULT_WORKERS, plan_resume, resume_run
+
+        run_name = (params.get("run_name") or params.get("run_dir") or "").strip()
+        if not run_name:
+            log("ERROR: no run specified.")
+            _finish(job_id, False)
+            return
+
+        run_dir = Path(run_name)
+        if not run_dir.exists():                       # accept a bare folder name too
+            run_dir = Path("reports") / "earnings" / run_name
+        if not run_dir.exists():
+            log(f"ERROR: run folder not found: {run_name}")
+            _finish(job_id, False)
+            return
+
+        plan = plan_resume(run_dir, universe=params.get("universe", "auto"))
+        if not plan["missing"] and plan["has_allocation"] and not params.get("force"):
+            log(f"{plan['name']} is already complete ({len(plan['done'])}/{plan['total']} "
+                f"screened, allocation present). Nothing to do.")
+            _finish(job_id, True)
+            return
+
+        overrides = {}
+        if params.get("provider"):
+            cfg, _ = _build_config(params)             # explicit overrides win over run metadata
+            overrides = {k: cfg[k] for k in ("llm_provider", "quick_think_llm", "deep_think_llm")}
+
+        resume_run(
+            run_dir,
+            budget=int(params.get("budget", DEFAULT_BUDGET)),
+            workers=int(params.get("workers", DEFAULT_WORKERS)),
+            allocate=not params.get("no_allocate"),
+            universe=params.get("universe", "auto"),
+            config_overrides=overrides or None,
+            log=log,
+            job_id=job_id,
+            reports_root=Path("reports"),
+        )
+        try:
+            from cli.commands.reports import _auto_build_web
+            _auto_build_web()
+        except Exception:
+            pass
+        _finish(job_id, True)
+    except Exception as exc:
+        log(f"ERROR: {exc}")
+        _finish(job_id, False)
+
+
 def _run_allocate(job_id: str, params: dict) -> None:
     log = lambda msg: _log(job_id, msg)
     try:
@@ -663,15 +786,31 @@ class CalendarFetchRangeRequest(BaseModel):
     end: str    # YYYY-MM-DD
 
 
+# NOTE: these handlers are deliberately `def`, not `async def`. Their bodies are
+# synchronous (file reads, yfinance calls, report building), and Starlette runs a
+# sync handler in a threadpool while an async one runs *on the event loop* — so an
+# `async def` that blocks stalls every other request. /api/watchlist takes ~8 s on
+# a cold quote cache; as `async def` it made the Screenings page's 2 ms calendar
+# request appear to take five seconds.
 @app.get("/", response_class=HTMLResponse)
-async def root():
+def root():
     html = (Path(__file__).parent / "static" / "reports_site.html").read_text()
-    # Serve the HTML with live data embedded
+    # Embed only the first page of data — the rest arrives via /api/runs,
+    # /api/trades and /api/report as the user asks for it.
     try:
         from cli.commands.reports import _build_reports_data
         import json
         from cli.commands.common import _trades_path
-        data = _build_reports_data(Path("reports"), _trades_path())
+        data = _build_reports_data(
+            Path("reports"), _trades_path(),
+            limit_runs=INITIAL_RUNS, include_bodies=False,
+            limit_trades=INITIAL_TRADES, limit_reflections=INITIAL_REFLECTIONS,
+            refresh_watchlist=False,
+        )
+        # …but serve live statuses from the warm snapshot, so TRIGGERED rows and
+        # the overview alert are right on the first paint instead of appearing a
+        # beat later. Costs nothing: it never blocks on a fetch.
+        data["watchlist"] = watchlist_snapshot(block_if_cold=False) or data["watchlist"]
         html = html.replace("__TRADINGAGENTS_DATA__", json.dumps(data))
     except Exception:
         html = html.replace("__TRADINGAGENTS_DATA__", "{}")
@@ -681,12 +820,12 @@ async def root():
 # Client-side-routed views: serve the same single-page app so /screenings,
 # /trades, … load directly (reload / bookmark / deep link) rather than only via
 # the in-app nav. The frontend reads location.pathname to render the right view.
-for _view in ("overview", "screenings", "trades", "reflections", "performance", "run"):
+for _view in ("overview", "screenings", "analyses", "watchlist", "trades", "reflections", "performance", "run"):
     app.add_api_route(f"/{_view}", root, response_class=HTMLResponse)
 
 
 @app.get("/api/calendar")
-async def get_calendar():
+def get_calendar():
     return JSONResponse(_load_calendar())
 
 
@@ -760,7 +899,7 @@ async def fetch_calendar_range(req: CalendarFetchRangeRequest):
 
 
 @app.post("/api/calendar/add")
-async def add_calendar_tickers(req: CalendarAddRequest):
+def add_calendar_tickers(req: CalendarAddRequest):
     tickers = [t.strip().upper() for t in req.tickers.split(",") if t.strip()]
     if not tickers:
         raise HTTPException(400, "No tickers provided")
@@ -798,7 +937,13 @@ async def delete_calendar_entry(date: str, ticker: str):
 
 
 @app.get("/api/trades")
-async def get_trades():
+def get_trades(limit: int | None = None, offset: int = 0):
+    """Trades, newest-last as stored. `limit` returns the most recent N.
+
+    `offset` walks further back from there (offset=300&limit=300 is "the 300
+    before the 300 you already have"), which is how the Trades view pages.
+    Without params the whole log comes back, as it always did.
+    """
     from cli.commands.common import _trades_path
     trades_path = _trades_path()
     try:
@@ -806,25 +951,250 @@ async def get_trades():
         if trades_path.exists():
             import json as _json
             data = _json.loads(trades_path.read_text(encoding="utf-8"))
+        total = len(data)
+        if limit is not None:
+            end = max(0, total - max(0, offset))
+            data = data[max(0, end - max(0, limit)):end]
+            return JSONResponse({"trades": data, "total": total, "offset": offset})
         return JSONResponse(data)
     except Exception as exc:
         raise HTTPException(500, str(exc))
 
 
-@app.get("/api/data")
-async def get_data():
+@app.get("/api/reflections")
+def get_reflections(limit: int = 40, offset: int = 0):
+    """Reflections newest-first, paged — bodies included (they're small)."""
     try:
         from cli.commands.reports import _build_reports_data
-        import json
         from cli.commands.common import _trades_path
-        data = _build_reports_data(Path("reports"), _trades_path())
+        data = _build_reports_data(Path("reports"), _trades_path(),
+                                   limit_runs=0, include_bodies=False, limit_trades=0,
+                                   refresh_watchlist=False)
+        refl = data["reflections"]
+        return JSONResponse({
+            "reflections": refl[offset:offset + max(1, limit)],
+            "total": len(refl), "offset": offset,
+        })
+    except Exception as exc:
+        raise HTTPException(500, str(exc))
+
+
+# How much the dashboard loads before you ask for more. Report bodies are never
+# in the first payload — they were ~20 MB of a 27 MB page (see _build_reports_data).
+INITIAL_RUNS = 12
+# Trades are NOT truncated. The Overview builds its stats, charts and equity
+# curve client-side from DATA.trades, so a partial log silently reports partial
+# lifetime P&L ($28k of $143k) rather than looking incomplete. At ~800 B a fill
+# the whole log is under 1 MB — a rounding error next to the report bodies that
+# actually made the page heavy. /api/trades?limit=&offset= still exists for
+# callers that want a page.
+INITIAL_TRADES = None
+INITIAL_REFLECTIONS = 40
+PAGE_RUNS = 12
+
+
+@app.get("/api/data")
+def get_data(full: bool = False):
+    """First payload for the dashboard: recent runs only, no report bodies.
+
+    `full=true` returns everything, which is what the static `build-web` output
+    needs — there is no server behind that page to fetch the rest from.
+    """
+    try:
+        from cli.commands.reports import _build_reports_data
+        from cli.commands.common import _trades_path
+        kwargs = {} if full else dict(
+            limit_runs=INITIAL_RUNS, include_bodies=False,
+            limit_trades=INITIAL_TRADES, limit_reflections=INITIAL_REFLECTIONS,
+            refresh_watchlist=False,
+        )
+        data = _build_reports_data(Path("reports"), _trades_path(), **kwargs)
+        if not full:  # same warm snapshot the page embed uses
+            data["watchlist"] = watchlist_snapshot(block_if_cold=False) or data["watchlist"]
+        return JSONResponse(data)
+    except Exception as exc:
+        raise HTTPException(500, str(exc))
+
+
+@app.get("/api/runs")
+def get_runs(offset: int = 0, limit: int = PAGE_RUNS):
+    """The next page of screening runs (summaries only, no report bodies)."""
+    try:
+        from cli.commands.reports import _build_reports_data
+        from cli.commands.common import _trades_path
+        data = _build_reports_data(
+            Path("reports"), _trades_path(),
+            limit_runs=max(1, min(limit, 100)), run_offset=max(0, offset),
+            include_bodies=False, limit_trades=0, limit_reflections=0,
+            refresh_watchlist=False,
+        )
+        return JSONResponse({
+            "runs":       data["screening_runs"],
+            "total_runs": data["total_runs"],
+            "offset":     data["run_offset"],
+        })
+    except Exception as exc:
+        raise HTTPException(500, str(exc))
+
+
+@app.get("/api/report")
+def get_report(run: str, ticker: str):
+    """One ticker's markdown bodies, fetched only when a report is opened."""
+    try:
+        run_dir = Path(run)
+        if not run_dir.exists():
+            run_dir = Path("reports") / "earnings" / run
+        ticker_dir = run_dir / ticker
+        if not ticker_dir.is_dir():
+            raise HTTPException(404, f"no such ticker report: {run}/{ticker}")
+
+        def _read(path: Path, cap: int):
+            if not path.exists():
+                return None
+            raw = path.read_text(encoding="utf-8")
+            return raw[:cap] if len(raw) > cap else raw
+
+        return JSONResponse({
+            "ticker": ticker,
+            "earnings_brief_md":     _read(ticker_dir / "earnings_brief.md", 15_000),
+            "portfolio_decision_md": _read(ticker_dir / "5_portfolio" / "decision.md", 12_000),
+        })
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(500, str(exc))
+
+
+# --------------------------------------------------------------------------- #
+# Watchlist snapshot (stale-while-revalidate)
+# --------------------------------------------------------------------------- #
+# TRIGGERED is the one status that cannot be known without a live quote, so a
+# page served from unrefreshed data paints ARMED rows that flip a second later —
+# a visible stutter, and the overview's alert strip arriving late is exactly the
+# thing a user needs promptly. Keeping one warm snapshot in the server means the
+# embedded payload is already live-accurate and /api/watchlist answers instantly.
+# Requests never block on the refresh: they take what is cached and trigger a
+# background one, so a slow yfinance call can never sit on the critical path.
+
+_WL_TTL_SECONDS = 45.0
+_WL_LOCK = threading.Lock()
+_WL_SNAP: dict = {"at": 0.0, "data": None}
+_WL_REFRESHING = False
+
+
+def _wl_compute() -> list[dict]:
+    from tradingagents.allocation.watchlist import collect_watchlists
+    return collect_watchlists(Path("reports"))
+
+
+def _wl_refresh_bg() -> None:
+    """Recompute the snapshot off the request path. At most one at a time."""
+    global _WL_REFRESHING
+    with _WL_LOCK:
+        if _WL_REFRESHING:
+            return
+        _WL_REFRESHING = True
+
+    def work():
+        global _WL_REFRESHING
+        try:
+            data = _wl_compute()
+            with _WL_LOCK:
+                _WL_SNAP["data"], _WL_SNAP["at"] = data, time.time()
+        except Exception:
+            pass
+        finally:
+            with _WL_LOCK:
+                _WL_REFRESHING = False
+
+    threading.Thread(target=work, daemon=True).start()
+
+
+def watchlist_snapshot(block_if_cold: bool = True) -> list[dict]:
+    """Cached watchlist, refreshed in the background when stale.
+
+    Only the very first caller after startup pays for the fetch (and only if
+    ``block_if_cold``); everyone after that gets the snapshot immediately.
+    """
+    with _WL_LOCK:
+        data, at = _WL_SNAP["data"], _WL_SNAP["at"]
+    if data is not None:
+        if time.time() - at > _WL_TTL_SECONDS:
+            _wl_refresh_bg()
+        return data
+    if not block_if_cold:
+        _wl_refresh_bg()
+        return []
+    try:
+        data = _wl_compute()
+    except Exception:
+        return []
+    with _WL_LOCK:
+        _WL_SNAP["data"], _WL_SNAP["at"] = data, time.time()
+    return data
+
+
+@app.on_event("startup")
+def _warm_watchlist():
+    """Fill the snapshot before the first page asks for it."""
+    _wl_refresh_bg()
+
+
+@app.get("/api/watchlist")
+def get_watchlist():
+    """Watchlist entries (#19) with freshly computed trigger status."""
+    try:
+        return JSONResponse(watchlist_snapshot())
+    except Exception as exc:
+        raise HTTPException(500, str(exc))
+
+
+class WatchlistActionRequest(BaseModel):
+    run_id: str
+    ticker: str
+    action: str            # purchased | dismissed | reset
+    note: str | None = None
+
+
+@app.post("/api/watchlist/action")
+def watchlist_action(req: WatchlistActionRequest):
+    """Flag a watch entry as bought, drop it, or undo either (#19).
+
+    Orders are still placed manually — this only records what the user did, so
+    the row stops nagging. Returns the refreshed list for a straight re-render.
+    """
+    from tradingagents.allocation.watchlist import (
+        USER_STATES,
+        collect_watchlists,
+        fetch_live_price,
+        set_entry_state,
+    )
+
+    action = (req.action or "").strip().lower()
+    if action not in USER_STATES + ("reset",):
+        raise HTTPException(400, f"unknown action {req.action!r}")
+    try:
+        price = fetch_live_price(req.ticker) if action == "purchased" else None
+        set_entry_state(
+            req.run_id,
+            req.ticker,
+            None if action == "reset" else action,
+            reports_root=Path("reports"),
+            note=req.note,
+            price=price,
+        )
+        # The overlay just changed, so the snapshot is wrong by definition —
+        # recompute inline (caches are warm) and publish it for everyone else.
+        data = collect_watchlists(Path("reports"))
+        with _WL_LOCK:
+            _WL_SNAP["data"], _WL_SNAP["at"] = data, time.time()
         return JSONResponse(data)
     except Exception as exc:
         raise HTTPException(500, str(exc))
 
 
 @app.get("/api/stats")
-async def get_stats():
+def get_stats():
     import json as _json
     from cli.commands.common import _trades_path
     trade_log_path = _trades_path()
@@ -891,7 +1261,7 @@ async def get_stats():
 
 
 @app.get("/api/weights")
-async def get_weights():
+def get_weights():
     from tradingagents.allocation.weights import load_weights
     return JSONResponse(load_weights())
 
@@ -904,21 +1274,20 @@ class WeightsRequest(BaseModel):
 
 
 @app.post("/api/weights")
-async def update_weights(req: WeightsRequest):
+def update_weights(req: WeightsRequest):
     from tradingagents.allocation.weights import save_weights, load_weights
     save_weights(req.beat, req.guidance, req.setup, req.fundamentals)
     return JSONResponse(load_weights())
 
 
 @app.get("/api/screening-runs")
-async def list_screening_runs():
-    earnings_base = Path("reports") / "earnings"
-    if not earnings_base.exists():
-        return JSONResponse([])
+def list_screening_runs():
+    # iter_run_dirs, not a raw name sort: sorting on the name puts every
+    # screening_ run above every earnings_ one ('s' > 'e') regardless of date.
+    from tradingagents.reports_layout import iter_run_dirs
+
     runs = []
-    for d in sorted(earnings_base.iterdir(), key=lambda p: p.name, reverse=True):
-        if not d.is_dir():
-            continue
+    for d in iter_run_dirs(Path("reports")):
         tickers = [t for t in d.iterdir() if t.is_dir() and (t / "earnings_brief.md").exists()]
         runs.append({
             "name":           d.name,
@@ -929,7 +1298,7 @@ async def list_screening_runs():
 
 
 @app.post("/api/jobs")
-async def create_job(req: JobRequest):
+def create_job(req: JobRequest):
     runners = {
         "screen":    _run_screen,
         "analyze":   _run_analyze,
@@ -937,6 +1306,7 @@ async def create_job(req: JobRequest):
         "reflect":   _run_reflect,
         "improve":   _run_improve,
         "allocate":  _run_allocate,
+        "resume":    _run_resume,
     }
     runner = runners.get(req.type)
     if not runner:
@@ -952,18 +1322,190 @@ async def create_job(req: JobRequest):
     return {"job_id": job_id}
 
 
+@app.post("/api/jobs/{job_id}/stop")
+def stop_job(job_id: str, force: bool = False):
+    """Ask a job to stop, by whatever means is safe for where it is running.
+
+    Three cases, and the distinction matters:
+
+    * **This process** (the usual one — dashboard jobs are threads here). Their
+      recorded PID *is* the server's, so signalling it would kill the dashboard.
+      Cancellation is cooperative: queued tickers are never started, in-flight
+      ones finish. Reported as `cancelling` until the work unwinds.
+    * **Another live process** — a detached CLI run. SIGTERM (SIGKILL on
+      ``force``), which the registry then observes via PID liveness.
+    * **A process that is already gone.** Nothing to stop; the record is just
+      marked so it stops claiming to be running.
+    """
+    import os
+    import signal
+
+    from cli import jobs_registry
+
+    rec = next((r for r in jobs_registry.load(Path("reports")) if r.get("id") == job_id), None)
+    with _JOBS_LOCK:
+        local = _jobs.get(job_id)
+    if rec is None and local is None:
+        raise HTTPException(404, f"unknown job {job_id}")
+
+    if rec and rec.get("status") in jobs_registry.TERMINAL:
+        # `interrupted` is *derived* from a dead PID and not yet on disk. Persist
+        # whatever it settled on, so a stopped-then-clicked job stops coming back
+        # as "running" the next time the file is read.
+        jobs_registry.finish(job_id, rec["status"], reports_root=Path("reports"))
+        return {"status": rec["status"], "message": f"Job already {rec['status']} — cleared."}
+
+    jobs_registry.request_cancel(job_id, reports_root=Path("reports"))
+
+    pid = (rec or {}).get("pid")
+    if pid and pid != os.getpid():
+        alive = jobs_registry._alive(pid)
+        if alive is False:
+            jobs_registry.finish(job_id, jobs_registry.CANCELLED, reports_root=Path("reports"))
+            return {"status": jobs_registry.CANCELLED,
+                    "message": "That job's process was already gone — cleared."}
+        try:
+            os.kill(pid, signal.SIGKILL if force else signal.SIGTERM)
+        except Exception as exc:
+            raise HTTPException(500, f"could not signal pid {pid}: {exc}")
+        return {"status": jobs_registry.CANCELLING,
+                "message": f"Sent {'SIGKILL' if force else 'SIGTERM'} to pid {pid}."}
+
+    if local is None:
+        # Ours by PID, but this process has no thread for it — it belongs to a
+        # previous server lifetime that happened to be assigned the same PID.
+        jobs_registry.finish(job_id, jobs_registry.CANCELLED, reports_root=Path("reports"))
+        return {"status": jobs_registry.CANCELLED, "message": "Cleared — no live work found."}
+
+    _log(job_id, "── Stop requested — no further tickers will be started. ──")
+    return {"status": jobs_registry.CANCELLING,
+            "message": "Stopping. Tickers already in progress finish first "
+                       "(up to a few minutes); nothing new starts."}
+
+
 @app.get("/api/jobs")
-async def list_jobs():
+def list_jobs():
+    """Jobs this process knows about, merged with the durable registry.
+
+    The registry contributes work this process did not start — a detached CLI
+    run, or a job from a previous server lifetime — so the activity banner
+    reflects everything actually running on the machine, not just what this
+    process happens to remember. Registry records also carry live progress and
+    an `interrupted` status for jobs whose process is gone.
+    """
     with _JOBS_LOCK:
         summary = [
-            {"id": j["id"], "type": j["type"], "status": j["status"]}
+            {"id": j["id"], "type": j["type"], "status": j["status"], "live": True}
             for j in _jobs.values()
         ]
+    known = {j["id"] for j in summary}
+
+    try:
+        from cli import jobs_registry
+        by_id = {r["id"]: r for r in jobs_registry.load(Path("reports"))}
+        for j in summary:                       # enrich in-process jobs with progress/label
+            rec = by_id.get(j["id"])
+            if rec:
+                j["progress"] = rec.get("progress")
+                j["label"] = rec.get("label") or _JOB_LABELS.get(j["type"], j["type"])
+                j["run_dir"] = rec.get("run_dir")
+                j["started_at"] = rec.get("started_at")
+                # The in-memory thread still calls itself "running" while it
+                # unwinds; the registry knows a stop was asked for.
+                if rec.get("status") == jobs_registry.CANCELLING and j["status"] == "running":
+                    j["status"] = jobs_registry.CANCELLING
+        for rec in by_id.values():
+            if rec["id"] in known:
+                continue
+            summary.append({
+                "id": rec["id"], "type": rec.get("type", "job"),
+                "status": rec.get("status", "running"), "live": False,
+                "progress": rec.get("progress"),
+                "label": rec.get("label") or _JOB_LABELS.get(rec.get("type", ""), rec.get("type", "job")),
+                "run_dir": rec.get("run_dir"), "started_at": rec.get("started_at"),
+                "log_path": rec.get("log_path"), "external": True,
+            })
+    except Exception:
+        pass
     return JSONResponse(summary)
 
 
+# Screening index for the calendar, cached against the run set so a finished
+# screen shows up immediately but repeat page renders cost nothing.
+_SCR_INDEX_CACHE: dict = {}
+
+
+def _runs_signature() -> tuple:
+    from tradingagents.reports_layout import iter_run_dirs
+    dirs = iter_run_dirs(Path("reports"))
+    newest = max((d.stat().st_mtime for d in dirs), default=0)
+    return (len(dirs), round(newest))
+
+
+@app.get("/api/screening-index")
+def screening_index(since: str = ""):
+    """ticker -> past screenings, for the earnings calendar.
+
+    Scoped to companies on the stored calendar and independent of the paged run
+    list, so the calendar shows a ticker's screening history whether or not the
+    run that produced it has been loaded into the page.
+    """
+    try:
+        from cli.commands.reports import build_screening_index
+
+        cal_tickers = {
+            str(e.get("ticker", "")).strip().upper()
+            for day in (_load_calendar() or {}).values()
+            for e in (day.get("entries") or [])
+        } - {""}
+
+        key = (since, _runs_signature(), len(cal_tickers))
+        hit = _SCR_INDEX_CACHE.get("k")
+        if hit == key and "v" in _SCR_INDEX_CACHE:
+            return JSONResponse(_SCR_INDEX_CACHE["v"])
+
+        idx = build_screening_index(Path("reports"), since=since,
+                                    tickers=cal_tickers or None)
+        _SCR_INDEX_CACHE.clear()
+        _SCR_INDEX_CACHE["k"] = key
+        _SCR_INDEX_CACHE["v"] = idx
+        return JSONResponse(idx)
+    except Exception as exc:
+        raise HTTPException(500, str(exc))
+
+
+@app.get("/api/resume/candidates")
+def resume_candidates():
+    """Runs that are missing tickers or an allocation, newest first."""
+    try:
+        from cli.commands.resume import resumable_runs
+        return JSONResponse(resumable_runs(Path("reports")))
+    except Exception as exc:
+        raise HTTPException(500, str(exc))
+
+
+@app.get("/api/resume/plan")
+def resume_plan(run: str, universe: str = "auto"):
+    """Exactly what resuming one run would do — no side effects."""
+    try:
+        from cli.commands.resume import plan_resume
+        run_dir = Path(run)
+        if not run_dir.exists():
+            run_dir = Path("reports") / "earnings" / run
+        if not run_dir.exists():
+            raise HTTPException(404, f"run not found: {run}")
+        plan = plan_resume(run_dir, universe=universe)
+        plan["done"] = len(plan["done"])          # counts are all the UI needs
+        plan.pop("metadata", None)
+        return JSONResponse(plan)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(500, str(exc))
+
+
 @app.get("/api/jobs/{job_id}")
-async def get_job_status(job_id: str):
+def get_job_status(job_id: str):
     with _JOBS_LOCK:
         job = _jobs.get(job_id)
     if not job:

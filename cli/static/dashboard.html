@@ -248,7 +248,7 @@
       <div class="stat-card">
         <div class="label">TWR (Cumulative)</div>
         <div class="value" id="s-twr">—</div>
-        <div class="sub">Geometric chain of per-trade HPRs</div>
+        <div class="sub">Chain-linked daily returns on capital</div>
       </div>
       <div class="stat-card">
         <div class="label">TWR (Annualized)</div>
@@ -258,7 +258,7 @@
       <div class="stat-card">
         <div class="label">MWR (Cumulative)</div>
         <div class="value" id="s-mwr">—</div>
-        <div class="sub">Σ P&amp;L ÷ Σ Capital Deployed</div>
+        <div class="sub">Σ P&amp;L ÷ peak capital at work</div>
       </div>
       <div class="stat-card">
         <div class="label">MWR (Annualized)</div>
@@ -587,43 +587,43 @@ function renderAvgReturns(trades) {
 
 // ── Portfolio Returns (TWR + MWR) ────────────────────────────────────────────
 //
-// TWR — Time-Weighted Return
-//   Chains each trade's holding-period return geometrically.
-//   Eliminates the effect of position sizing so it measures signal quality.
-//   Formula: Π(1 + HPR_i) – 1  where HPR_i = pnl_i / cost_basis_i
+// Both need a *capital base* — the money actually at work — not Σ of every
+// position's notional. Those differ by the turnover, and dividing by the sum
+// reported +0.99% for what was a ~+18% period ($15.7M traded on a ~$840k book).
 //
-// MWR — Money-Weighted Return (simplified)
-//   Measures how much each dollar deployed actually earned.
-//   Formula: Σ pnl / Σ cost_basis
-//   (Proper IRR requires entry dates which may be absent for IBKR imports;
-//   this approximation is equivalent to Modified Dietz with equal weighting.)
+// Entry dates are absent from IBKR closing records, so exposure cannot be
+// integrated over time and a true IRR is not computable. What can be proven
+// without them: trades exiting on the same day were all open that day, so the
+// largest same-day exit notional is a hard lower bound on peak capital at work.
+// Conservative — the true average base is lower, so this understates returns.
+//
+//   MWR = Σ pnl ÷ capital base
+//   TWR = Π(1 + daily pnl ÷ capital base) – 1, chain-linked over exit *days*.
+//         Chaining per-*trade* HPRs instead treats concurrent positions as if
+//         each reinvested the previous one's proceeds; over 1,322 overlapping
+//         trades that compounded a +18% account into a reported +1,580%.
 //
 // Both are annualized using (1 + r)^(365/days) – 1 when period ≥ 7 days.
+
+function capitalBase(trades) {
+  const byDay = new Map();
+  trades.forEach(t => {
+    const d = t.exit_date, cb = costBasis(t);
+    if (d && cb > 0) byDay.set(d, (byDay.get(d) || 0) + cb);
+  });
+  let base = 0, peakDay = null;
+  byDay.forEach((v, d) => { if (v > base) { base = v; peakDay = d; } });
+  return { base: base || null, peakDay };
+}
 
 function computeReturns(trades) {
   const valid = trades.filter(t => t.pnl != null);
   if (!valid.length) return null;
 
   const sorted = [...valid].sort((a,b) => (a.exit_date||'').localeCompare(b.exit_date||''));
-
-  let twrFactor = 1;
-  let totalCost = 0, totalPnl = 0;
-
-  sorted.forEach(t => {
-    const cb = costBasis(t);
-    const p  = t.pnl || 0;
-    totalPnl += p;
-    if (cb && cb > 0) {
-      twrFactor *= (1 + p / cb);
-      totalCost += cb;
-    } else if (t.pnl_pct != null) {
-      // No cost basis available; use pnl_pct for TWR chain only
-      twrFactor *= (1 + t.pnl_pct / 100);
-    }
-  });
-
-  const twr = twrFactor - 1;
-  const mwr = totalCost > 0 ? totalPnl / totalCost : null;
+  const totalPnl  = sorted.reduce((s,t) => s + (t.pnl || 0), 0);
+  const totalCost = sorted.reduce((s,t) => s + (costBasis(t) || 0), 0);
+  const { base, peakDay } = capitalBase(sorted);
 
   // Date range (first → last exit_date)
   const dates = sorted.map(t => t.exit_date).filter(Boolean);
@@ -631,8 +631,17 @@ function computeReturns(trades) {
   if (dates.length >= 2) {
     days = (new Date(dates[dates.length-1]) - new Date(dates[0])) / 86400000;
   }
+  const annualize = r => (days >= 7 && r != null && r > -1) ? Math.pow(1 + r, 365 / days) - 1 : null;
 
-  const annualize = r => days >= 7 ? Math.pow(1 + r, 365 / days) - 1 : null;
+  let twr = null;
+  if (base > 0) {
+    const pnlByDay = new Map();
+    sorted.forEach(t => { if (t.exit_date) pnlByDay.set(t.exit_date, (pnlByDay.get(t.exit_date) || 0) + (t.pnl || 0)); });
+    let f = 1;
+    [...pnlByDay.keys()].sort().forEach(d => { f *= (1 + pnlByDay.get(d) / base); });
+    twr = f - 1;
+  }
+  const mwr = base > 0 ? totalPnl / base : null;
 
   return {
     twr,
@@ -642,6 +651,9 @@ function computeReturns(trades) {
     days:      Math.round(days),
     totalCost,
     totalPnl,
+    base,
+    peakDay,
+    turnover:  base > 0 ? totalCost / base : null,
   };
 }
 
@@ -666,7 +678,9 @@ function renderReturns(trades) {
   set('s-mwr-ann', r.mwrAnn);
 
   const meta = r.days > 0
-    ? `${r.days}-day period · capital deployed: ${money(Math.round(r.totalCost))}`
+    ? `${r.days}-day period · capital base ${money(Math.round(r.base))}`
+      + (r.peakDay ? ` (peak open ${r.peakDay})` : '')
+      + (r.turnover ? ` · ${r.turnover.toFixed(1)}× turnover, ${money(Math.round(r.totalCost))} traded` : '')
     : 'single-day period · no annualization';
   $('s-returns-meta').textContent = meta;
 }

@@ -33,8 +33,29 @@ def _extract_brief_scores(brief_md: str) -> dict:
         return {}
 
 
-def _build_reports_data(reports_dir: Path, trades_path: Path) -> dict:
-    """Collect all report data into a single dict for the static reports site."""
+def _build_reports_data(
+    reports_dir: Path,
+    trades_path: Path,
+    *,
+    limit_runs: int | None = None,
+    run_offset: int = 0,
+    include_bodies: bool = True,
+    limit_trades: int | None = None,
+    limit_reflections: int | None = None,
+    refresh_watchlist: bool = True,
+) -> dict:
+    """Collect report data into a single dict for the dashboard / static site.
+
+    Full fidelity by default — that is what `build-web` needs, since a static
+    page has no server to fetch anything from later.
+
+    The live dashboard passes limits instead. Report *bodies*
+    (`earnings_brief_md`, `portfolio_decision_md`) dominate the payload — ~20 MB
+    of a 27 MB page across 3,000 ticker rows — yet are only ever read when a
+    single ticker is expanded, so the server sends them on demand via
+    `/api/report` and sets `include_bodies=False` here. Skipping them also
+    avoids thousands of file reads, which is most of the build time.
+    """
     import json
     import re
     import datetime as dt
@@ -45,11 +66,22 @@ def _build_reports_data(reports_dir: Path, trades_path: Path) -> dict:
             trades = json.loads(trades_path.read_text(encoding="utf-8"))
         except Exception:
             pass
+    total_trades = len(trades)
+    all_trades = trades                     # every stat below is computed over this
+    if limit_trades is not None:
+        # Trade log is oldest-first, so the most recent are at the tail.
+        # Guard limit_trades == 0: trades[-0:] is the whole list, not none of it.
+        trades = trades[-limit_trades:] if limit_trades > 0 else []
 
     from tradingagents.reports_layout import iter_run_dirs
 
     screening_runs: list = []
     all_run_dirs = iter_run_dirs(reports_dir)
+    total_runs = len(all_run_dirs)
+    if limit_runs is not None:
+        all_run_dirs = all_run_dirs[run_offset:run_offset + limit_runs]
+    elif run_offset:
+        all_run_dirs = all_run_dirs[run_offset:]
 
     for d in all_run_dirs:
         if not d.is_dir():
@@ -123,12 +155,13 @@ def _build_reports_data(reports_dir: Path, trades_path: Path) -> dict:
                 continue
             brief_raw = brief_path.read_text(encoding="utf-8")
             scores    = _extract_brief_scores(brief_raw)
-            capped    = brief_raw[:15_000] if len(brief_raw) > 15_000 else brief_raw
             pm_path   = td / "5_portfolio" / "decision.md"
-            pm_md     = None
-            if pm_path.exists():
-                raw_pm = pm_path.read_text(encoding="utf-8")
-                pm_md  = raw_pm[:12_000] if len(raw_pm) > 12_000 else raw_pm
+            capped = pm_md = None
+            if include_bodies:
+                capped = brief_raw[:15_000] if len(brief_raw) > 15_000 else brief_raw
+                if pm_path.exists():
+                    raw_pm = pm_path.read_text(encoding="utf-8")
+                    pm_md  = raw_pm[:12_000] if len(raw_pm) > 12_000 else raw_pm
             tk_alloc = alloc_by_ticker.get(td.name, {})
 
             fund_score = _load_json(td / "fundamentals_score.json") or {}
@@ -168,6 +201,10 @@ def _build_reports_data(reports_dir: Path, trades_path: Path) -> dict:
                 "peers":                 peers,
                 "earnings_brief_md":     capped,
                 "portfolio_decision_md": pm_md,
+                # Bodies may be omitted (see include_bodies); these say whether one
+                # exists to fetch, so the UI can tell "not loaded" from "not there".
+                "has_brief":             True,
+                "has_decision":          pm_path.exists(),
             })
 
         screening_runs.append({
@@ -203,7 +240,19 @@ def _build_reports_data(reports_dir: Path, trades_path: Path) -> dict:
         capped    = brief_raw[:15_000] if len(brief_raw) > 15_000 else brief_raw
         pm_path   = d / "5_portfolio" / "decision.md"
         pm_md     = pm_path.read_text(encoding="utf-8")[:12_000] if pm_path.exists() else None
-        standalone.append({"id": d.name, "ticker": ticker2, "date": date2, "earnings_brief_md": capped, "portfolio_decision_md": pm_md, "report_type": "brief" if brief_path.exists() else "analysis"})
+        # Parse the score block so standalone runs are comparable to screened
+        # ones on the Analyses page (a complete_report.md may have no score
+        # block at all — missing keys just come through as None).
+        scores2   = _extract_brief_scores(brief_raw)
+        standalone.append({
+            "id": d.name, "ticker": ticker2, "date": date2,
+            "signal":      scores2.get("signal"),
+            "confidence":  scores2.get("confidence"),
+            "total_score": scores2.get("total_score"),
+            "one_liner":   scores2.get("one_liner"),
+            "earnings_brief_md": capped, "portfolio_decision_md": pm_md,
+            "report_type": "brief" if brief_path.exists() else "analysis",
+        })
 
     reflections: list = []
     reflections_dir = reports_dir / "reflections"
@@ -240,19 +289,26 @@ def _build_reports_data(reports_dir: Path, trades_path: Path) -> dict:
                 "post_mortem_md": pm_raw[:30_000] if len(pm_raw) > 30_000 else pm_raw,
             })
 
+    total_reflections = len(reflections)
+    if limit_reflections is not None:
+        reflections = reflections[:limit_reflections]
+
+    # Deliberately `all_trades`, not the truncated `trades`: these are
+    # whole-history figures. Computing them from the display slice made the
+    # Overview report $28k of lifetime P&L instead of $143k.
     stats: dict = {}
-    if trades:
-        n_t      = len(trades)
-        wins_t   = sum(1 for t in trades if (t.get("pnl") or 0) > 0)
-        losses_t = sum(1 for t in trades if (t.get("pnl") or 0) < 0)
-        total_pnl = sum(t.get("pnl") or 0 for t in trades)
+    if all_trades:
+        n_t      = len(all_trades)
+        wins_t   = sum(1 for t in all_trades if (t.get("pnl") or 0) > 0)
+        losses_t = sum(1 for t in all_trades if (t.get("pnl") or 0) < 0)
+        total_pnl = sum(t.get("pnl") or 0 for t in all_trades)
         stats["wins"]     = wins_t
         stats["losses"]   = losses_t
         stats["total_pnl"] = total_pnl
         stats["win_rate"] = wins_t / n_t * 100 if n_t else 0
 
         _pos: dict = {}
-        for t in trades:
+        for t in all_trades:
             key = (t.get("ticker", ""), t.get("exit_date", ""))
             sh  = t.get("shares") or 0
             ep  = t.get("entry_price") or 0
@@ -318,12 +374,31 @@ def _build_reports_data(reports_dir: Path, trades_path: Path) -> dict:
                 pass
             stats["benchmark"] = bench
 
+    # Watchlist (#19) — WATCH entries across runs with live trigger status.
+    # The live-quote refresh is a network round-trip per ticker (~2s), which is
+    # most of the dashboard's page-build time. The server passes
+    # refresh_watchlist=False and lets the page's own /api/watchlist call fill in
+    # live prices a moment later; the static build keeps them baked in, having no
+    # server to ask afterwards.
+    try:
+        from tradingagents.allocation.watchlist import collect_watchlists
+        watchlist = collect_watchlists(reports_dir, refresh=refresh_watchlist)
+    except Exception:
+        watchlist = []
+
     return {
         "generated_at":       dt.datetime.now().isoformat(),
         "trades":              trades,
         "screening_runs":      screening_runs,
+        # Paging metadata: what the caller got vs. what exists on disk.
+        "total_runs":          total_runs,
+        "run_offset":          run_offset,
+        "total_trades":        total_trades,
+        "total_reflections":   total_reflections,
+        "bodies_included":     include_bodies,
         "standalone_analyses": standalone,
         "reflections":         reflections,
+        "watchlist":           watchlist,
         "stats":               stats,
     }
 
@@ -387,3 +462,68 @@ def build_web(
 
     console.print(f"[green]✓ Built:[/green] {out_path.resolve()}")
     console.print("[dim]Open that file in any browser — no server needed.[/dim]")
+
+
+def build_screening_index(reports_dir: Path, since: str = "", tickers: "set | None" = None) -> dict:
+    """Compact ticker -> screenings map for the earnings calendar.
+
+    The calendar cross-references each upcoming company against past screenings.
+    Deriving that from the dashboard's *paged* run list made it depend on how
+    far the user had scrolled: a run that had not been loaded simply did not
+    exist as far as the calendar was concerned, so its day looked unscreened.
+
+    This walks the run dirs directly and returns only what a calendar row shows
+    — scores and a one-liner, no report bodies — so it stays a few hundred KB
+    across every run rather than tens of MB. ``since`` (YYYY-MM-DD) limits the
+    scan to runs whose label date is on or after it.
+    """
+    from tradingagents.reports_layout import iter_run_dirs, run_sort_key
+
+    index: dict[str, list] = {}
+    for d in iter_run_dirs(reports_dir):
+        label = run_sort_key(d)[0]
+        if since and label and label < since:
+            continue
+        meta = _load_json(d / "metadata.json") or {}
+
+        alloc_by_ticker: dict = {}
+        alloc_path = d / "allocation.md"
+        if alloc_path.exists():
+            try:
+                import re as _re
+                m = _re.search(r'```json\s*(\{.*?\})\s*```',
+                               alloc_path.read_text(encoding="utf-8"), _re.DOTALL)
+                if m:
+                    for entry in json.loads(m.group(1)).get("allocations", []):
+                        if entry.get("ticker"):
+                            alloc_by_ticker[entry["ticker"]] = entry.get("amount")
+            except Exception:
+                pass
+
+        for td in sorted(d.iterdir()):
+            if not td.is_dir() or not (td / "earnings_brief.md").exists():
+                continue
+            if tickers is not None and td.name not in tickers:
+                continue
+            scores = _extract_brief_scores((td / "earnings_brief.md").read_text(encoding="utf-8"))
+            if not scores:
+                continue
+            fund = _load_json(td / "fundamentals_score.json") or {}
+            index.setdefault(td.name, []).append({
+                "run_id":             d.name,
+                "date":               label,
+                "earnings_date":      meta.get("earnings_date") or label,
+                "depth":              meta.get("depth"),
+                "signal":             scores.get("signal"),
+                "confidence":         scores.get("confidence"),
+                "beat_score":         scores.get("beat_score"),
+                "guidance_score":     scores.get("guidance_score"),
+                "setup_score":        scores.get("setup_score"),
+                "total_score":        scores.get("total_score"),
+                "fundamentals_score": fund.get("fundamentals_score"),
+                "one_liner":          scores.get("one_liner"),
+                "allocation_amount":  alloc_by_ticker.get(td.name),
+            })
+    for rows in index.values():
+        rows.sort(key=lambda r: r.get("date") or "", reverse=True)
+    return index

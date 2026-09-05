@@ -53,6 +53,13 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:1
 .nav-icon{font-size:12px;width:15px;text-align:center;flex-shrink:0}
 .sidebar-footer{padding:13px 16px;border-top:1px solid var(--border);font-size:10px;color:var(--muted)}
 .sidebar-footer strong{color:var(--dim);display:block;margin-bottom:2px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.08em}
+/* DeepSeek peak / off-peak pricing indicator */
+.ds-pill{margin:0 12px 10px;padding:8px 11px;border-radius:var(--r-sm);border:1px solid;font-size:10.5px;line-height:1.45;cursor:default}
+.ds-pill strong{display:block;font-size:9.5px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;margin-bottom:2px}
+.ds-pill span{display:block;color:var(--muted)}
+.ds-off{background:var(--win-bg);border-color:var(--win-border);color:var(--win)}
+.ds-peak{background:var(--loss-bg);border-color:var(--loss-border);color:var(--loss)}
+.ds-warn{display:flex;align-items:center;gap:10px;background:var(--loss-bg);border:1px solid var(--loss-border);border-radius:var(--r);padding:11px 16px;margin-bottom:16px;font-size:12.5px;color:var(--loss)}
 
 /* ── Main ──────────────────────────────────────────────────── */
 #main{margin-left:var(--sidebar-w);flex:1;min-height:100vh;min-width:0}
@@ -99,6 +106,30 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:1
 .b-high{background:var(--accent-bg);color:var(--accent);border-color:var(--accent-border)}
 .b-medium{background:var(--warn-bg);color:var(--warn);border-color:var(--warn-border)}
 .b-low{background:rgba(255,255,255,0.05);color:var(--dim);border-color:rgba(255,255,255,0.08)}
+
+/* ── Watchlist (#19) ───────────────────────────────────────── */
+.b-triggered{background:var(--loss-bg);color:var(--loss);border-color:var(--loss-border);animation:wlPulse 1.6s ease-in-out infinite}
+.b-armed{background:var(--warn-bg);color:var(--warn);border-color:var(--warn-border)}
+.b-pending{background:rgba(255,255,255,0.05);color:var(--dim);border-color:rgba(255,255,255,0.08)}
+.b-expired{background:transparent;color:var(--muted);border-color:rgba(255,255,255,0.06)}
+@keyframes wlPulse{0%,100%{opacity:1}50%{opacity:.55}}
+.wl-nav-badge{margin-left:auto;background:var(--warn-bg);color:var(--warn);border:1px solid var(--warn-border);border-radius:9px;font-size:9.5px;font-weight:700;padding:1px 7px;font-family:var(--mono)}
+.wl-nav-badge.hot{background:var(--loss-bg);color:var(--loss);border-color:var(--loss-border)}
+.wl-alert{display:flex;align-items:center;gap:10px;background:var(--loss-bg);border:1px solid var(--loss-border);border-radius:var(--r);padding:11px 16px;margin-bottom:16px;cursor:pointer;font-size:12.5px}
+.wl-alert:hover{filter:brightness(1.15)}
+.wl-dist-ok{color:var(--dim);font-family:var(--mono)}
+.wl-dist-close{color:var(--warn);font-family:var(--mono);font-weight:700}
+.wl-dist-hit{color:var(--loss);font-family:var(--mono);font-weight:700}
+.b-purchased{background:var(--win-bg);color:var(--win);border-color:var(--win-border)}
+.b-dismissed{background:transparent;color:var(--muted);border-color:rgba(255,255,255,0.06)}
+.wl-acts{display:flex;gap:5px;white-space:nowrap}
+.wl-btn{background:rgba(255,255,255,0.05);color:var(--dim);border:1px solid var(--border2);border-radius:var(--r-sm);padding:3px 9px;font-size:10.5px;font-weight:700;cursor:pointer;font-family:inherit;transition:all .13s}
+.wl-btn:hover{background:rgba(255,255,255,0.1);color:var(--text)}
+.wl-btn:disabled{opacity:.4;cursor:wait}
+.wl-btn.buy:hover{background:var(--win-bg);color:var(--win);border-color:var(--win-border)}
+.wl-btn.del:hover{background:var(--loss-bg);color:var(--loss);border-color:var(--loss-border)}
+.wl-live{color:var(--win);font-size:8px;vertical-align:middle;margin-left:4px}
+.wl-stale{color:var(--muted);font-size:8px;vertical-align:middle;margin-left:4px}
 .b-neutral,.b-break_even{background:rgba(255,255,255,0.05);color:var(--dim);border-color:rgba(255,255,255,0.08)}
 
 /* ── Data table ────────────────────────────────────────────── */
@@ -317,8 +348,14 @@ select option{background:var(--surface)}
 #run-banner.visible{transform:translateY(0);pointer-events:auto}
 .bnr-dot{width:7px;height:7px;border-radius:50%;background:var(--warn);flex-shrink:0;animation:bnrpulse 1.3s infinite}
 @keyframes bnrpulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.4;transform:scale(.8)}}
-.bnr-close{margin-left:auto;background:none;border:none;color:var(--warn);cursor:pointer;font-size:14px;opacity:.65;line-height:1;padding:2px 5px;border-radius:3px;flex-shrink:0}
+.bnr-close{background:none;border:none;color:var(--warn);cursor:pointer;font-size:14px;opacity:.65;line-height:1;padding:2px 5px;border-radius:3px;flex-shrink:0}
 .bnr-close:hover{opacity:1}
+.bnr-stop{margin-left:auto;background:rgba(248,113,113,0.14);border:1px solid var(--loss-border);color:var(--loss);cursor:pointer;font-size:10.5px;font-weight:700;line-height:1;padding:4px 9px;border-radius:4px;flex-shrink:0;letter-spacing:.02em}
+.bnr-stop:hover:not(:disabled){background:rgba(248,113,113,0.26)}
+.bnr-stop:disabled{opacity:.5;cursor:default}
+.job-stop-row{display:flex;align-items:center;gap:10px;padding:9px 12px;border:1px solid var(--border);border-radius:var(--r);margin-bottom:7px;font-size:12px}
+.job-stop-row .jsr-name{flex:1;font-weight:600}
+.job-stop-row .jsr-meta{color:var(--dim);font-size:11px}
 #bnr-text{cursor:pointer;flex:1;text-underline-offset:2px}
 #bnr-text:hover{text-decoration:underline dotted}
 
@@ -375,6 +412,7 @@ select option{background:var(--surface)}
 <div id="run-banner">
   <span class="bnr-dot"></span>
   <span id="bnr-text" onclick="openBannerLog()">Running…</span>
+  <button class="bnr-stop" id="bnr-stop" onclick="bnrStop()" title="Stop the running job">■ Stop</button>
   <button class="bnr-close" onclick="hideBanner()" aria-label="Dismiss">✕</button>
 </div>
 <div id="bnr-log-modal" onclick="if(event.target===this)closeBannerLog()">
@@ -398,12 +436,15 @@ select option{background:var(--surface)}
   <div class="nav">
     <div class="nav-item active" id="ni-overview"    onclick="go('overview')"><span class="nav-icon">◎</span> Overview</div>
     <div class="nav-item"        id="ni-screenings"  onclick="go('screenings')"><span class="nav-icon">⊞</span> Screenings</div>
+    <div class="nav-item"        id="ni-analyses"    onclick="go('analyses')"><span class="nav-icon">☰</span> Analyses</div>
+    <div class="nav-item"        id="ni-watchlist"   onclick="go('watchlist')"><span class="nav-icon">⌖</span> Watchlist <span id="wl-badge" class="wl-nav-badge" style="display:none"></span></div>
     <div class="nav-item"        id="ni-trades"      onclick="go('trades')"><span class="nav-icon">◑</span> Trades</div>
     <div class="nav-item"        id="ni-reflections" onclick="go('reflections')"><span class="nav-icon">◐</span> Reflections</div>
     <div class="nav-item"        id="ni-performance" onclick="go('performance')"><span class="nav-icon">◉</span> Performance</div>
     <div class="nav-sep">Actions</div>
     <div class="nav-item"        id="ni-run"         onclick="go('run')"><span class="nav-icon">▶</span> Run</div>
   </div>
+  <div id="ds-pricing" class="ds-pill ds-off"></div>
   <div class="sidebar-footer">
     <strong>Last built</strong>
     <span id="gen-ts">—</span>
@@ -413,6 +454,8 @@ select option{background:var(--surface)}
 <main id="main">
   <section class="view active" id="v-overview"></section>
   <section class="view"        id="v-screenings"></section>
+  <section class="view"        id="v-analyses"></section>
+  <section class="view"        id="v-watchlist"></section>
   <section class="view"        id="v-trades"></section>
   <section class="view"        id="v-reflections"></section>
   <section class="view"        id="v-performance"></section>
@@ -547,7 +590,7 @@ function parseMarkdownTable(mdText){
 
 // ── Navigation ──────────────────────────────────────────────────────────────
 let view='overview', tradeFilter={out:'all',dir:'all',q:''};
-const VIEWS=['overview','screenings','trades','reflections','performance','run'];
+const VIEWS=['overview','screenings','analyses','watchlist','trades','reflections','performance','run'];
 // Served by FastAPI (http/https) → use clean paths (/screenings). Opened as a
 // local file:// → fall back to hash routing (#screenings), since paths can't work there.
 const usePath=(location.protocol==='http:'||location.protocol==='https:');
@@ -603,6 +646,7 @@ function scoreWidget(label,score,max){
 function renderOverview(){
   $('v-overview').innerHTML=`
 <div class="ph"><h2>Overview</h2><p>Trade performance dashboard — stats, charts, and full history</p></div>
+<div id="wl-alert-slot">${wlAlertHtml()}</div>
 
 <div class="dp-6col">
   <div class="stat"><div class="stat-label">Total Trades</div><div class="stat-value" id="dp-s-total">—</div><div class="stat-sub" id="dp-s-total-sub"></div></div>
@@ -627,9 +671,9 @@ function renderOverview(){
 <div class="section">
   <div class="sec-hd"><div class="sec-title">Portfolio Returns</div><span id="dp-s-returns-meta" style="font-size:11px;color:var(--dim)"></span></div>
   <div class="dp-4col">
-    <div class="stat"><div class="stat-label">TWR (Cumulative)</div><div class="stat-value" id="dp-s-twr">—</div><div class="stat-sub">Geometric chain of per-trade HPRs</div></div>
+    <div class="stat"><div class="stat-label">TWR (Cumulative)</div><div class="stat-value" id="dp-s-twr">—</div><div class="stat-sub">Chain-linked daily returns on capital</div></div>
     <div class="stat"><div class="stat-label">TWR (Annualized)</div><div class="stat-value" id="dp-s-twr-ann">—</div><div class="stat-sub">Compounded over trading period</div></div>
-    <div class="stat"><div class="stat-label">MWR (Cumulative)</div><div class="stat-value" id="dp-s-mwr">—</div><div class="stat-sub">Σ P&amp;L ÷ Σ Capital Deployed</div></div>
+    <div class="stat"><div class="stat-label">MWR (Cumulative)</div><div class="stat-value" id="dp-s-mwr">—</div><div class="stat-sub">Σ P&amp;L ÷ peak capital at work</div></div>
     <div class="stat"><div class="stat-label">MWR (Annualized)</div><div class="stat-value" id="dp-s-mwr-ann">—</div><div class="stat-sub">Over first-to-last exit date span</div></div>
   </div>
 </div>
@@ -667,6 +711,107 @@ function renderOverview(){
 }
 
 // ── Screenings ──────────────────────────────────────────────────────────────
+// ── Calendar market-cap filter ────────────────────────────────────────────────
+// Entries carry raw dollars (SPG = 72287464284). Inputs are friendlier: bare
+// numbers mean millions, and a B/M/K/T suffix means what it says.
+let _calCap={min:null,max:null,unknown:true};
+let _calData={};                 // date -> day payload, kept for lazy body builds
+let _calIdx={};                  // screening index, rebuilt with the calendar
+const CAL_CAP_KEY='ta_cal_cap';
+const CAL_PRESETS={
+  all:   [null,null],
+  micro: [null,300e6],
+  small: [300e6,2e9],
+  mid:   [2e9,10e9],
+  large: [10e9,null],
+};
+
+try{const s=localStorage.getItem(CAL_CAP_KEY);if(s)_calCap={..._calCap,...JSON.parse(s)};}catch(e){}
+
+function parseCap(v){
+  const s=String(v??'').trim().toUpperCase().replace(/[$,\s]/g,'');
+  if(!s)return null;
+  const m=s.match(/^([0-9]*\.?[0-9]+)\s*([KMBT])?$/);
+  if(!m)return null;
+  const n=parseFloat(m[1]);
+  if(!isFinite(n))return null;
+  const mult={K:1e3,M:1e6,B:1e9,T:1e12}[m[2]||'M'];   // bare number = millions
+  return n*mult;
+}
+function fmtCapShort(v){
+  if(v==null)return'';
+  if(v>=1e12)return (v/1e12).toFixed(v>=1e13?0:1)+'T';
+  if(v>=1e9) return (v/1e9 ).toFixed(v>=1e10?0:1)+'B';
+  if(v>=1e6) return (v/1e6 ).toFixed(v>=1e7 ?0:1)+'M';
+  return String(Math.round(v));
+}
+function calCapActive(){return _calCap.min!=null||_calCap.max!=null;}
+function calCapMatch(e){
+  if(!calCapActive())return true;
+  const v=e&&e.market_cap;
+  if(v==null||!isFinite(v))return _calCap.unknown;   // no data: user's call
+  if(_calCap.min!=null&&v<_calCap.min)return false;
+  if(_calCap.max!=null&&v>_calCap.max)return false;
+  return true;
+}
+function calCapSave(){try{localStorage.setItem(CAL_CAP_KEY,JSON.stringify(_calCap));}catch(e){}}
+
+function calCapApply(){
+  _calCap.min=parseCap(($('cal-cap-min')||{}).value);
+  _calCap.max=parseCap(($('cal-cap-max')||{}).value);
+  const u=$('cal-cap-unknown'); if(u)_calCap.unknown=u.checked;
+  if(_calCap.min!=null&&_calCap.max!=null&&_calCap.min>_calCap.max){
+    const t=_calCap.min;_calCap.min=_calCap.max;_calCap.max=t;   // be forgiving
+  }
+  calCapSave();
+  calRepaint();
+}
+function calCapPreset(name){
+  const [lo,hi]=CAL_PRESETS[name]||CAL_PRESETS.all;
+  _calCap.min=lo;_calCap.max=hi;
+  calCapSave();
+  const mn=$('cal-cap-min'),mx=$('cal-cap-max');
+  if(mn)mn.value=lo!=null?fmtCapShort(lo):'';
+  if(mx)mx.value=hi!=null?fmtCapShort(hi):'';
+  calRepaint();
+}
+
+// Repaint headers, and rebuild only the bodies the user has open.
+function calRepaint(){
+  const el=$('cal-scr-days'); if(!el) return;
+  const open=new Set();
+  Object.keys(_calData).forEach(d=>{
+    const b=document.getElementById('cal-bd-'+d);
+    if(b&&b.style.display!=='none')open.add(d);
+  });
+  const days=Object.keys(_calData).sort().reverse();
+  el.innerHTML=days.map(d=>renderCalDayCard(d,_calData[d],_calIdx)).join('');
+  open.forEach(d=>toggleCalDay(d));
+  const n=$('cal-cap-note');
+  if(n){
+    const tot=days.reduce((s,d)=>s+((_calData[d].entries||[]).length),0);
+    const kept=days.reduce((s,d)=>s+((_calData[d].entries||[]).filter(calCapMatch).length),0);
+    n.textContent=calCapActive()?`${kept} of ${tot} companies match`:`${tot} companies`;
+  }
+}
+
+function calCapBarHtml(){
+  const mn=_calCap.min!=null?fmtCapShort(_calCap.min):'';
+  const mx=_calCap.max!=null?fmtCapShort(_calCap.max):'';
+  const pb=(k,l)=>`<button class="fb" onclick="calCapPreset('${k}')">${l}</button>`;
+  return `<div class="cal-fetch-bar" style="margin-bottom:14px;flex-wrap:wrap">
+    <div class="dp-fg"><label>Market cap min</label><input type="text" id="cal-cap-min" value="${mn}" placeholder="e.g. 300M" style="width:104px" onchange="calCapApply()"></div>
+    <div class="dp-fg"><label>max</label><input type="text" id="cal-cap-max" value="${mx}" placeholder="e.g. 10B" style="width:104px" onchange="calCapApply()"></div>
+    <div style="display:flex;gap:5px;align-self:end;padding-bottom:1px">
+      ${pb('all','All')}${pb('micro','Micro')}${pb('small','Small')}${pb('mid','Mid')}${pb('large','Large')}
+    </div>
+    <label style="align-self:end;padding-bottom:4px;font-size:11.5px;color:var(--dim);display:flex;gap:5px;align-items:center;cursor:pointer">
+      <input type="checkbox" id="cal-cap-unknown" ${_calCap.unknown?'checked':''} onchange="calCapApply()" style="accent-color:var(--accent)"> include unknown cap
+    </label>
+    <span id="cal-cap-note" style="align-self:end;padding-bottom:4px;margin-left:auto;font-size:11.5px;color:var(--dim)"></span>
+  </div>`;
+}
+
 function buildScreeningIndex() {
   const idx = {};
   (DATA.screening_runs||[]).forEach(run => {
@@ -679,6 +824,58 @@ function buildScreeningIndex() {
   return idx;
 }
 
+// Server-side index over every run, not just the loaded page. Reshaped into the
+// {run, data} pairs the calendar renderer already expects.
+async function calLoadScreeningIndex(){
+  if(!usePath) return;
+  const days=Object.keys(_calData||{}).sort();
+  if(!days.length) return;
+  const since=new Date(new Date(days[0]+'T00:00:00').getTime()-SCREENING_WINDOW_DAYS*86400000)
+                 .toISOString().slice(0,10);
+  try{
+    const res=await fetch(`/api/screening-index?since=${since}`);
+    if(!res.ok) return;                      // keep the loaded-runs index as-is
+    const idx=await res.json();
+    const out={};
+    Object.entries(idx).forEach(([tk,rows])=>{
+      out[tk]=rows.map(r=>({
+        run:{id:r.run_id,date:r.date,earnings_date:r.earnings_date,depth:r.depth},
+        data:r,
+      }));
+    });
+    _calIdx=out;
+  }catch(e){}
+}
+
+// How far back a screening still counts as "about" a given earnings date.
+// Without this, a ticker that reports every quarter shows every screening ever
+// run against it (AMKR/BRO/NUE span Apr→Jul) in each day's accordion, and the
+// 25 runs that carry no earnings_date leak into every single day.
+const SCREENING_WINDOW_DAYS = 30;
+
+function daysBefore(runDate, earningsDate) {
+  if(!runDate || !earningsDate) return null;
+  const a = new Date(runDate+'T00:00:00'), b = new Date(earningsDate+'T00:00:00');
+  if(isNaN(a) || isNaN(b)) return null;
+  return (b - a) / 86400000;   // >0 = run happened before the print
+}
+
+// Screenings relevant to earnings date `d`: run within the trailing window
+// (Aug 3 print → screenings done since Jul 3), regardless of which batch they
+// came from. Recency is the rule, not the run's own earnings_date label: a
+// batch is tagged with the date it targeted, but a ticker inside it can report
+// a few days later (WHR sits in the Jul 27 batch yet prints Aug 3), and that
+// screening is exactly the one worth seeing. Runs dated after the print are
+// kept only when explicitly tagged for it, so a later cycle can't bleed back.
+function screeningsForDay(allForTicker, d) {
+  return (allForTicker||[]).filter(s => {
+    const diff = daysBefore(s.run.date, d);
+    if(diff === null) return true;
+    if(diff < 0) return s.run.earnings_date === d;
+    return diff <= SCREENING_WINDOW_DAYS;
+  });
+}
+
 function nextWeekdayStr(base, offset) {
   let d = new Date(base+'T00:00:00');
   while(d.getDay()===0||d.getDay()===6) d.setDate(d.getDate()+1);
@@ -686,17 +883,13 @@ function nextWeekdayStr(base, offset) {
   return d.toISOString().slice(0,10);
 }
 
-function renderCalDayCard(d, day, scrIdx) {
-  const entries = day.entries||[];
-  const fetchedAt = day.fetched_at?new Date(day.fetched_at).toLocaleString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}):'—';
-  const screenedCount = entries.filter(e=>(scrIdx[e.ticker]||[]).length>0).length;
+function calDayBodyHtml(d, day, scrIdx) {
+  const entries = (day.entries||[]).filter(calCapMatch);
   const sc = n => n!=null?`<span class="${n>0?'c-win':n<0?'c-loss':'c-dim'}" style="font-weight:700;font-family:var(--mono)">${n>=0?'+':''}${n}</span>`:'<span style="color:var(--muted)">—</span>';
-
-  const dayRun = (DATA.screening_runs||[]).find(r=>r.earnings_date===d && r.allocation_md);
 
   const depthLabel = d => { const n=parseInt(d)||0; return n<=1?'Shallow':n<=3?'Medium':'Deep'; };
   const rows = entries.map(e=>{
-    const scrs = (scrIdx[e.ticker]||[]).filter(s => !s.run.earnings_date || s.run.earnings_date === d);
+    const scrs = screeningsForDay(scrIdx[e.ticker], d);
     const latest = scrs[0];
     const sessColor = e.session==='AH'?'var(--accent)':e.session==='PM'?'var(--info)':'var(--dim)';
     let sigHtml='<span style="color:var(--muted)">—</span>';
@@ -709,7 +902,7 @@ function renderCalDayCard(d, day, scrIdx) {
       fundH=td.fundamentals_score!=null?sc(td.fundamentals_score):'<span style="color:var(--muted)">—</span>';
       const cc=td.confidence||'—';
       confH=`<span class="badge ${cc==='High'?'b-high':cc==='Medium'?'b-medium':'b-low'}">${esc(cc)}</span>`;
-      if(scrs.length>1) histH=`<button class="cal-remove-btn" style="color:var(--accent);font-weight:700;font-size:11px;padding:1px 5px" onclick="openTickerHistory('${esc(e.ticker)}',event)" title="${scrs.length} screenings">×${scrs.length}</button>`;
+      if(scrs.length>1) histH=`<button class="cal-remove-btn" style="color:var(--accent);font-weight:700;font-size:11px;padding:1px 5px" onclick="openTickerHistory('${esc(e.ticker)}',event,'${d}')" title="${scrs.length} screenings in the ${SCREENING_WINDOW_DAYS}d before this print">×${scrs.length}</button>`;
     }
     const tkHtml=latest
       ?`<strong class="tm" style="cursor:pointer;color:var(--accent)" onclick="openTickerDetail('${latest.run.id}','${esc(e.ticker)}')">${esc(e.ticker)}</strong>`
@@ -747,38 +940,56 @@ function renderCalDayCard(d, day, scrIdx) {
         <th>Conf</th><th>Depth</th><th class="tr">Alloc</th><th style="max-width:200px">One-liner</th>
         <th style="text-align:center" title="Past screenings">Hist</th><th></th>
       </tr></thead><tbody>${rows}</tbody></table></div>`
-    :`<div style="padding:14px 18px;color:var(--muted);font-size:12px">No entries yet. Re-fetch from NASDAQ or add tickers below.</div>`;
+    :`<div style="padding:14px 18px;color:var(--muted);font-size:12px">${calCapActive()?'No companies in this market-cap range.':'No entries yet. Re-fetch from NASDAQ or add tickers below.'}</div>`;
+
+  return `${tableHtml}
+    <div class="cal-add-row">
+      <input type="text" id="csa-${d}" placeholder="Add tickers: AAPL, MSFT, …">
+      <button class="ab" onclick="csAddTickers('${d}','csa-${d}')">Add</button>
+    </div>`;
+}
+
+// Header only. Day bodies are built on expand (see toggleCalDay): rendering all
+// of them eagerly cost ~683 KB of HTML and 546 checkboxes across five days,
+// every one of them inside a collapsed container nobody was looking at.
+function renderCalDayCard(d, day, scrIdx) {
+  const all = day.entries || [];
+  const entries = all.filter(calCapMatch);
+  const fetchedAt = day.fetched_at?new Date(day.fetched_at).toLocaleString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}):'—';
+  const screenedCount = entries.filter(e=>(scrIdx[e.ticker]||[]).length>0).length;
+  const dayRun = (DATA.screening_runs||[]).find(r=>r.earnings_date===d && r.allocation_md);
+  const countTxt = calCapActive()
+    ? `<span style="color:var(--accent)">${entries.length}</span> of ${all.length} companies`
+    : `${all.length} companies`;
 
   return `<div class="cal-day">
     <div class="cal-day-hd" onclick="toggleCalDay('${d}')" style="cursor:pointer">
       <span class="chevron" id="cal-ch-${d}" style="color:var(--muted)">▶</span>
       <div style="flex:1">
         <div class="cal-day-title">${fmtCalDay(d)}</div>
-        <div class="cal-day-sub">${entries.length} companies · ${screenedCount} screened · fetched ${fetchedAt}</div>
+        <div class="cal-day-sub">${countTxt} · ${screenedCount} screened · fetched ${fetchedAt}</div>
       </div>
       ${dayRun?`<button class="ab" style="margin-right:8px" onclick="event.stopPropagation();openDetail('Allocation — ${fmtCalDay(d)}',md(DATA.screening_runs.find(x=>x.id==='${dayRun.id}').allocation_md))">Allocation</button>`:''}
       <button class="cal-screen-btn" onclick="event.stopPropagation();calScreenDay('${d}')">Screen Selected ▶</button>
     </div>
-    <div id="cal-bd-${d}" style="display:none">
-      ${tableHtml}
-      <div class="cal-add-row">
-        <input type="text" id="csa-${d}" placeholder="Add tickers: AAPL, MSFT, …">
-        <button class="ab" onclick="csAddTickers('${d}','csa-${d}')">Add</button>
-      </div>
-    </div>
+    <div id="cal-bd-${d}" style="display:none" data-built="0"></div>
   </div>`;
 }
 
 async function calLoadForScreenings() {
   const el=$('cal-scr-days'); if(!el) return;
-  const scrIdx=buildScreeningIndex();
+  _calIdx=buildScreeningIndex();          // whatever is loaded, as an instant first paint
   try {
     const res=await fetch('/api/calendar'); if(!res.ok) throw new Error(await res.text());
-    const cal=await res.json();
-    const days=Object.keys(cal).sort().reverse();
+    _calData=await res.json();
+    // The loaded page of runs is not the whole history — pull the calendar's own
+    // index so a ticker's past screenings show whether or not its run is paged in.
+    await calLoadScreeningIndex();
+    const days=Object.keys(_calData).sort().reverse();
     el.innerHTML=days.length
-      ?days.map(d=>renderCalDayCard(d,cal[d],scrIdx)).join('')
+      ?days.map(d=>renderCalDayCard(d,_calData[d],_calIdx)).join('')
       :'<div style="padding:18px 0;color:var(--muted);font-size:12px">No calendar data yet. Select a date range above and click "Fetch from NASDAQ".</div>';
+    calRepaint();
   } catch(e) { if(el) el.innerHTML=`<div style="padding:12px;color:var(--muted)">Error: ${esc(e.message)}</div>`; }
 }
 
@@ -800,15 +1011,28 @@ function toggleCalDay(d){
   const body=document.getElementById('cal-bd-'+d), chev=document.getElementById('cal-ch-'+d);
   if(!body) return;
   const open=body.style.display!=='none';
+  if(!open&&body.dataset.built!=='1'&&_calData[d]){
+    body.innerHTML=calDayBodyHtml(d,_calData[d],_calIdx);   // build on first open
+    body.dataset.built='1';
+  }
   body.style.display=open?'none':'';
   if(chev){chev.style.transform=open?'':'rotate(90deg)';chev.style.color=open?'var(--muted)':'var(--accent)';}
 }
 
 function calScrSelectAll(date,checked){document.querySelectorAll(`input[data-calscr="${date}"]`).forEach(cb=>cb.checked=checked);}
 
+// Tickers for a day: the user's checkbox selection when the day is open, else
+// everything that passes the market-cap filter — "Screen Selected" has always
+// worked on a collapsed card and must keep doing so now bodies are lazy.
+function calDayTickers(date){
+  const boxes=document.querySelectorAll(`input[data-calscr="${date}"]`);
+  if(boxes.length)return Array.from(boxes).filter(cb=>cb.checked).map(cb=>cb.value);
+  return ((_calData[date]||{}).entries||[]).filter(calCapMatch).map(e=>e.ticker);
+}
+
 function calScreenDay(date){
-  const checked=Array.from(document.querySelectorAll(`input[data-calscr="${date}"]:checked`)).map(cb=>cb.value);
-  if(!checked.length){alert('No tickers selected.');return;}
+  const checked=calDayTickers(date);
+  if(!checked.length){alert(calCapActive()?'No tickers match the market-cap filter for that day.':'No tickers selected.');return;}
   openScreenModal(checked,date);
 }
 
@@ -830,11 +1054,19 @@ async function csRemoveTicker(date,ticker){
   } catch(e){alert('Error: '+e.message);}
 }
 
-function openTickerHistory(ticker,ev){
+function openTickerHistory(ticker,ev,day,showAll){
   if(ev) ev.stopPropagation();
-  const scrs=buildScreeningIndex()[ticker]||[];
+  const all=buildScreeningIndex()[ticker]||[];
+  const scrs=(day&&!showAll)?screeningsForDay(all,day):all;
   if(!scrs.length) return;
+  const hidden=all.length-scrs.length;
   let body='<div style="padding:0 22px">';
+  if(day&&!showAll&&hidden>0){
+    body+=`<div style="display:flex;align-items:center;gap:10px;padding:10px 0 12px;font-size:11.5px;color:var(--muted);border-bottom:1px solid var(--border)">
+      <span style="flex:1">Showing screenings from the ${SCREENING_WINDOW_DAYS} days before this print · ${hidden} older hidden</span>
+      <button class="ab" onclick="closeDetail();openTickerHistory('${esc(ticker)}',null,'${esc(day)}',true)">Show all ${all.length} →</button>
+    </div>`;
+  }
   scrs.forEach(({run,data})=>{
     const sig=data.signal||'—', bc=sig==='BUY'?'b-buy':sig==='SHORT'?'b-short':'b-skip';
     const tot=data.total_score||0;
@@ -877,12 +1109,12 @@ function _renderSMForm(){
     </div>
     <div class="form-row">
       <div><label>Depth</label><select id="sm-depth"><option value="1">Shallow (1 round)</option><option value="3" selected>Medium (3 rounds)</option><option value="5">Deep (5 rounds)</option></select></div>
-      <div><label>Workers</label><input type="number" id="sm-workers" value="1" min="1" max="8"></div>
+      <div><label>Workers</label><input type="number" id="sm-workers" value="16" min="1" max="16"></div>
     </div>
     <div class="form-row"><div><label>Provider</label><select id="sm-prov" onchange="smUpdateModels()">${pOpts()}</select></div></div>
     <div class="form-row">
-      <div><label>Quick model</label><select id="sm-qm">${mOpts('deepseek','deepseek-chat')}</select></div>
-      <div><label>Deep model</label><select id="sm-dm">${mOpts('deepseek','deepseek-reasoner')}</select></div>
+      <div><label>Quick model</label><select id="sm-qm">${mOpts('deepseek','deepseek-v4-flash')}</select></div>
+      <div><label>Deep model</label><select id="sm-dm">${mOpts('deepseek','deepseek-v4-pro')}</select></div>
     </div>
     <div class="form-field"><label>Analysts</label><div class="checkrow">
       ${['market','social','news','fundamentals'].map(a=>`<label><input type="checkbox" value="${a}" checked> ${a}</label>`).join('')}
@@ -927,9 +1159,8 @@ async function runScreenModal(){
     if(e.data==='__DONE__'){
       _bnrHide('screen');
       const st=$('sm-status');if(st){st.className='job-status done';st.textContent='✓ done';}
-      // Pre-fetch fresh data so Screenings view is ready immediately
-      _screeningsRefreshing=false;
-      fetch('/api/data').then(r=>r.ok?r.json():null).then(fresh=>{if(fresh)Object.assign(DATA,fresh);}).catch(()=>{});
+      // Pre-fetch fresh runs so the Screenings view is ready immediately
+      _screeningsRefreshing=false;_scrPullRuns();
       const dr=$('sm-done-row');if(dr){dr.style.display='flex';dr.innerHTML=`<button class="btn-run" onclick="closeScreenModal();go('screenings')">View in Screenings</button><button class="dp-btn" onclick="closeScreenModal()" style="margin-left:6px">Close</button>`;}
       return;
     }
@@ -939,25 +1170,49 @@ async function runScreenModal(){
   ws.onerror=()=>{_bnrHide('screen');const st=$('sm-status');if(st){st.className='job-status error';st.textContent='✕ ws error';}};
 }
 
-let _screeningsRefreshing=false;
+let _screeningsRefreshing=false,_scrSig=null;
+
+// Cheap "did anything finish?" probe: names + ticker counts + allocation flags
+// for every run, ~11 KB. This used to re-download the entire 3.2 MB /api/data
+// on every visit to Screenings — a second of network and a main-thread
+// JSON.parse for a payload that is almost always identical to the one the page
+// was served with. Now the heavy fetch happens only when the probe changes.
+function _scrCheck(){
+  if(_screeningsRefreshing)return;
+  _screeningsRefreshing=true;
+  fetch('/api/screening-runs').then(r=>r.ok?r.json():null).then(list=>{
+    _screeningsRefreshing=false;
+    if(!Array.isArray(list))return;
+    const sig=list.map(r=>`${r.name}:${r.tickers}:${r.has_allocation?1:0}`).join('|');
+    if(_scrSig===null){_scrSig=sig;return;}   // first look: the embed IS this state
+    if(sig===_scrSig)return;
+    _scrSig=sig;
+    _scrPullRuns();
+  }).catch(()=>{_screeningsRefreshing=false;});
+}
+
+// Pull the first page of runs and merge, keeping any extra pages the user
+// loaded — otherwise a refresh silently throws their "Load more" away.
+function _scrPullRuns(){
+  fetch('/api/runs?offset=0&limit=12').then(r=>r.ok?r.json():null).then(j=>{
+    if(!j||!Array.isArray(j.runs))return;
+    const old=DATA.screening_runs||[];
+    const seen=new Set(j.runs.map(r=>r.id));
+    DATA.screening_runs=j.runs.concat(old.filter(r=>!seen.has(r.id)));
+    if(j.total_runs!=null)DATA.total_runs=j.total_runs;
+    if(currentView()==='screenings')renderScreenings();
+  }).catch(()=>{});
+}
+
 function renderScreenings(){
   const today=new Date().toISOString().slice(0,10);
   const calFrom=nextWeekdayStr(today,0), calTo=nextWeekdayStr(calFrom,4);
   const runs=DATA.screening_runs||[];
   const sa=DATA.standalone_analyses||[];
-  // Background-refresh data so newly completed runs appear without a page reload
-  if(!_screeningsRefreshing){
-    _screeningsRefreshing=true;
-    fetch('/api/data').then(r=>r.ok?r.json():null).then(fresh=>{
-      _screeningsRefreshing=false;
-      if(!fresh) return;
-      const oldCount=(DATA.screening_runs||[]).length;
-      Object.assign(DATA,fresh);
-      if((fresh.screening_runs||[]).length!==oldCount&&currentView()==='screenings') renderScreenings();
-    }).catch(()=>{_screeningsRefreshing=false;});
-  }
+  _scrCheck();
 
-  let h=`<div class="ph"><h2>Screenings</h2><p>${runs.length} run${runs.length!==1?'s':''} · fetch the earnings calendar below, select tickers to screen, or expand past runs to review results</p></div>
+  const totalRuns=DATA.total_runs!=null?DATA.total_runs:runs.length;
+  let h=`<div class="ds-warn-slot">${dsWarnHtml()}</div><div class="ph"><h2>Screenings</h2><p>${runs.length}${totalRuns>runs.length?` of ${totalRuns}`:''} run${totalRuns!==1?'s':''} · fetch the earnings calendar below, select tickers to screen, or expand past runs to review results</p></div>
 
 <div class="section">
   <div class="sec-hd" style="margin-bottom:10px"><div class="sec-title">NASDAQ Earnings Calendar</div></div>
@@ -967,6 +1222,7 @@ function renderScreenings(){
     <button class="btn-run" id="cal-range-btn" onclick="calFetchRange()">Fetch from NASDAQ</button>
     <span style="font-size:11.5px;color:var(--dim);align-self:center">AH of each day + PM of next trading day</span>
   </div>
+  ${calCapBarHtml()}
   <div id="cal-scr-days"><div style="color:var(--muted);font-size:12px">Loading calendar…</div></div>
 </div>
 
@@ -991,6 +1247,7 @@ function renderScreenings(){
         </div>
         <div class="sc-actions">
           ${r.allocation_md?`<button class="ab" onclick="event.stopPropagation();openDetail('Allocation — ${r.date}',md(DATA.screening_runs.find(x=>x.id==='${r.id}').allocation_md))">Allocation</button>`:''}
+          ${usePath?`<button class="ab" title="Screen any missing tickers, rebuild the table and re-run allocation" onclick="event.stopPropagation();runResume('${r.id}',this)">⟳ Resume</button>`:''}
           <span class="chevron" id="ch-${r.id}">▶</span>
         </div>
       </div>
@@ -1004,22 +1261,182 @@ function renderScreenings(){
     </div>`;
   });
 
+  if(totalRuns>runs.length){
+    h+=`<div style="text-align:center;padding:16px 0">
+      <button class="btn-run" id="scr-more" onclick="loadMoreRuns(this)">Load ${Math.min(12,totalRuns-runs.length)} older run${totalRuns-runs.length!==1?'s':''} <span style="opacity:.6;font-weight:400">(${runs.length} of ${totalRuns} loaded)</span></button>
+    </div>`;
+  }
+
+  // Single-ticker analyses used to be dumped at the bottom of this page, where
+  // they got lost. They now live on the Analyses view alongside every screened
+  // ticker; this just points there.
   if(sa.length){
-    h+=`<hr class="divider"><div class="sec-hd" style="margin-bottom:14px"><div class="sec-title">Single-Ticker Analyses</div></div>`;
-    sa.forEach(a=>{
-      const label=a.report_type==='analysis'?'Analysis Report':'Earnings Brief';
-      h+=`<div class="lc" onclick="openDetail('${esc(a.ticker)} — ${esc(a.date)}',md(DATA.standalone_analyses.find(x=>x.id==='${a.id}').earnings_brief_md))">
-        <div class="lc-icon" style="font-family:var(--mono);font-size:11px;font-weight:800">${esc(a.ticker)}</div>
+    h+=`<hr class="divider">
+      <div class="lc" onclick="go('analyses')">
+        <div class="lc-icon">☰</div>
         <div class="lc-body">
-          <div class="lc-title">${esc(a.ticker)} — ${label}</div>
-          <div class="lc-sub">${esc(a.date)} · ${esc(a.id)}</div>
+          <div class="lc-title">${sa.length} single-ticker analysis run${sa.length!==1?'s':''}</div>
+          <div class="lc-sub">Browse these and every screened ticker on the Analyses page</div>
         </div>
-        <div class="lc-meta"><span style="font-size:11px;color:var(--accent)">Read →</span></div>
+        <div class="lc-meta"><span style="font-size:11px;color:var(--accent)">Open →</span></div>
       </div>`;
-    });
   }
   $('v-screenings').innerHTML=h;
   calLoadForScreenings();
+}
+
+// Older runs are fetched a page at a time — the full set is ~27 MB of report
+// bodies, which is why the first payload carries neither all runs nor any body.
+async function loadMoreRuns(btn){
+  if(btn){btn.disabled=true;btn.textContent='Loading…';}
+  try{
+    const have=(DATA.screening_runs||[]).length;
+    const res=await fetch(`/api/runs?offset=${have}&limit=12`);
+    if(!res.ok)throw new Error('server error '+res.status);
+    const {runs,total_runs}=await res.json();
+    const seen=new Set((DATA.screening_runs||[]).map(r=>r.id));
+    DATA.screening_runs=(DATA.screening_runs||[]).concat((runs||[]).filter(r=>!seen.has(r.id)));
+    DATA.total_runs=total_runs;
+    _anLimit=AN_PAGE;                       // Analyses derives from these runs
+    renderScreenings();
+  }catch(e){
+    if(btn){btn.disabled=false;btn.textContent='Load more — '+e.message;}
+  }
+}
+
+// ── Analyses ────────────────────────────────────────────────────────────────
+// Every ticker-level analysis in one browsable place: the per-ticker work from
+// each screening run plus standalone `analyze` runs, which are otherwise only
+// reachable by expanding the run that produced them.
+let _anQuery='',_anSource='all',_anSignal='all',_anLimit=150;
+const AN_PAGE=150;
+
+function buildAllAnalyses(){
+  const out=[];
+  (DATA.screening_runs||[]).forEach(run=>{
+    (run.tickers||[]).forEach(t=>{
+      out.push({
+        ticker:t.ticker||'', date:run.date||'', source:'screening',
+        runId:run.id, runType:run.run_type, earningsDate:run.earnings_date,
+        signal:t.signal, confidence:t.confidence, total:t.total_score,
+        oneLiner:t.one_liner, alloc:t.allocation_amount,
+      });
+    });
+  });
+  (DATA.standalone_analyses||[]).forEach(a=>{
+    out.push({
+      ticker:a.ticker||'', date:a.date||'', source:'standalone',
+      id:a.id, reportType:a.report_type,
+      signal:a.signal, confidence:a.confidence, total:a.total_score,
+      oneLiner:a.one_liner, alloc:null,
+    });
+  });
+  out.sort((a,b)=>(b.date||'').localeCompare(a.date||'')||a.ticker.localeCompare(b.ticker));
+  return out;
+}
+
+function anSetQuery(v){_anQuery=(v||'').trim().toUpperCase();_anLimit=AN_PAGE;anRenderList();}
+function anSetSource(v){_anSource=v;_anLimit=AN_PAGE;anRenderList();}
+function anSetSignal(v){_anSignal=v;_anLimit=AN_PAGE;anRenderList();}
+function anMore(){_anLimit+=AN_PAGE;anRenderList();}
+
+function anFiltered(){
+  return buildAllAnalyses().filter(a=>{
+    if(_anSource!=='all'&&a.source!==_anSource) return false;
+    if(_anSignal!=='all'&&(a.signal||'')!==_anSignal) return false;
+    if(_anQuery&&!a.ticker.toUpperCase().includes(_anQuery)) return false;
+    return true;
+  });
+}
+
+function anOpen(idx){
+  const a=anFiltered()[idx];
+  if(!a) return;
+  if(a.source==='screening'){ openTickerDetail(a.runId,a.ticker); return; }
+  const rec=(DATA.standalone_analyses||[]).find(x=>x.id===a.id);
+  if(!rec) return;
+  let body='';
+  if(rec.portfolio_decision_md){
+    body+=`<div class="pm-header">Portfolio Manager Decision</div><div class="pm-body">${md(rec.portfolio_decision_md)}</div>`;
+  }
+  body+=`<div class="brief-header">${rec.report_type==='analysis'?'Analysis Report':'Pre-Earnings Brief &amp; Scores'}</div>`;
+  body+=rec.earnings_brief_md?md(rec.earnings_brief_md):'<p style="padding:20px 24px;color:var(--dim)">No report body available.</p>';
+  openDetail(`${a.ticker} — ${a.date}`,body);
+}
+
+function anRenderList(){
+  const el=$('an-list'); if(!el) return;
+  const rows=anFiltered();
+  const shown=rows.slice(0,_anLimit);
+  const sc=n=>n!=null?`<span class="${n>0?'c-win':n<0?'c-loss':'c-dim'}" style="font-weight:700;font-family:var(--mono)">${n>=0?'+':''}${n}</span>`:'<span style="color:var(--muted)">—</span>';
+  if(!rows.length){
+    el.innerHTML=`<div class="empty"><span class="ei">☰</span>No analyses match those filters.</div>`;
+    return;
+  }
+  const body=shown.map((a,i)=>{
+    const sig=a.signal||'—';
+    const sbc=sig==='BUY'?'b-buy':sig==='SHORT'?'b-short':'b-skip';
+    const conf=a.confidence||'—';
+    const cbc=conf==='High'?'b-high':conf==='Medium'?'b-medium':'b-low';
+    const srcLabel=a.source==='standalone'
+      ?`<span class="badge b-medium" title="Standalone analyze run">single</span>`
+      :`<span style="font-size:10.5px;color:var(--dim)" title="${esc(a.runId||'')}">${esc(a.runType||'screening')}</span>`;
+    return `<tr style="cursor:pointer" onclick="anOpen(${i})">
+      <td><strong class="tm" style="color:var(--accent)">${esc(a.ticker)}</strong></td>
+      <td style="color:var(--dim);font-family:var(--mono);font-size:11.5px">${esc(a.date||'—')}</td>
+      <td>${srcLabel}</td>
+      <td style="text-align:center">${a.signal?`<span class="badge ${sbc}">${esc(sig)}</span>`:'<span style="color:var(--muted)">—</span>'}</td>
+      <td>${a.confidence?`<span class="badge ${cbc}">${esc(conf)}</span>`:'<span style="color:var(--muted)">—</span>'}</td>
+      <td class="num">${sc(a.total)}</td>
+      <td class="num">${a.alloc?`<span style="color:var(--win)">$${Math.round(a.alloc/1000)}k</span>`:''}</td>
+      <td style="color:var(--dim);font-size:11px;max-width:340px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${esc(a.oneLiner||'')}">${esc(a.oneLiner||'')}</td>
+      <td style="text-align:right"><span style="font-size:11px;color:var(--accent)">Read →</span></td>
+    </tr>`;
+  }).join('');
+  el.innerHTML=`<div style="font-size:11.5px;color:var(--muted);margin-bottom:8px">Showing ${shown.length} of ${rows.length}</div>
+    <div style="overflow-x:auto"><table class="dt"><thead><tr>
+      <th>Ticker</th><th>Date</th><th>Source</th><th style="text-align:center">Signal</th><th>Conf</th>
+      <th class="tr">Total</th><th class="tr">Alloc</th><th>One-liner</th><th></th>
+    </tr></thead><tbody>${body}</tbody></table></div>
+    ${shown.length<rows.length?`<div style="text-align:center;margin-top:14px"><button class="ab" onclick="anMore()">Show ${Math.min(AN_PAGE,rows.length-shown.length)} more</button></div>`:''}
+    ${anCanLoadRuns()?`<div style="text-align:center;margin-top:10px;font-size:11.5px;color:var(--muted)">
+      Showing analyses from the ${(DATA.screening_runs||[]).length} most recent runs of ${DATA.total_runs}.
+      <button class="ab" style="margin-left:8px" onclick="loadMoreRuns(this).then(()=>{go('analyses')})">Load older runs</button>
+    </div>`:''}`;
+}
+
+// Analyses are derived from the loaded screening runs, so "everything" here means
+// "everything loaded" — say so, and offer the same paging the Screenings view has.
+function anCanLoadRuns(){
+  return usePath&&DATA.total_runs!=null&&DATA.total_runs>(DATA.screening_runs||[]).length;
+}
+
+function renderAnalyses(){
+  const all=buildAllAnalyses();
+  const nStandalone=(DATA.standalone_analyses||[]).length;
+  const nRuns=(DATA.screening_runs||[]).length;
+  const nTickers=new Set(all.map(a=>a.ticker)).size;
+  const opt=(v,l,cur)=>`<option value="${v}"${cur===v?' selected':''}>${l}</option>`;
+  $('v-analyses').innerHTML=`<div class="ph"><h2>Analyses</h2>
+      <p>${all.length} ticker-level analyses · ${nTickers} unique tickers · ${nRuns} screening runs + ${nStandalone} standalone run${nStandalone!==1?'s':''}</p></div>
+    <div class="section">
+      <div class="cal-fetch-bar" style="margin-bottom:14px">
+        <div class="dp-fg"><label>Ticker</label>
+          <input type="text" id="an-q" placeholder="Search…" value="${esc(_anQuery)}" oninput="anSetQuery(this.value)" style="width:150px"></div>
+        <div class="dp-fg"><label>Source</label>
+          <select id="an-src" onchange="anSetSource(this.value)" style="width:150px">
+            ${opt('all','All sources',_anSource)}${opt('screening','From screenings',_anSource)}${opt('standalone','Standalone only',_anSource)}
+          </select></div>
+        <div class="dp-fg"><label>Signal</label>
+          <select id="an-sig" onchange="anSetSignal(this.value)" style="width:120px">
+            ${opt('all','All',_anSignal)}${opt('BUY','BUY',_anSignal)}${opt('SHORT','SHORT',_anSignal)}${opt('SKIP','SKIP',_anSignal)}
+          </select></div>
+      </div>
+      <div id="an-list"></div>
+    </div>`;
+  anRenderList();
+  const q=$('an-q');
+  if(q&&_anQuery){q.focus();q.setSelectionRange(q.value.length,q.value.length);}
 }
 
 function toggleSc(id){
@@ -1134,20 +1551,68 @@ function openTickerDetail(runId,ticker){
   // Council Signals (#14 pricing/EV/asymmetry/crowding, #9 peers)
   body+=renderCouncilSignals(t);
 
-  // Portfolio Manager Decision
-  if(t.portfolio_decision_md){
-    body+=`<div class="pm-header">Portfolio Manager Decision</div>`;
-    body+=`<div class="pm-body">${md(t.portfolio_decision_md)}</div>`;
+  // Report bodies are not in the first payload (they were ~20 MB of it) — fetch
+  // the one report actually being opened, then cache it on the record.
+  const needsFetch=usePath&&t.earnings_brief_md==null&&t.has_brief;
+  if(needsFetch){
+    body+=`<div id="rpt-slot" style="padding:22px 24px;color:var(--muted);font-size:12.5px">Loading report…</div>`;
+    openDetail(ticker+' — Analysis',body);
+    fetchReport(runId,ticker).then(r=>{
+      const slot=$('rpt-slot');if(!slot)return;
+      slot.outerHTML=reportBodyHtml(r)||'<p style="padding:20px 24px;color:var(--dim)">No report body available.</p>';
+    }).catch(e=>{
+      const slot=$('rpt-slot');if(slot)slot.innerHTML=`Could not load the report: ${esc(e.message)}`;
+    });
+    return;
   }
 
-  // Earnings Brief
-  body+=`<div class="brief-header">Pre-Earnings Brief &amp; Scores</div>`;
-  body+=t.earnings_brief_md?md(t.earnings_brief_md):`<p style="padding:20px 24px;color:var(--dim)">No earnings brief available.</p>`;
-
+  body+=reportBodyHtml(t)||`<div class="brief-header">Pre-Earnings Brief &amp; Scores</div><p style="padding:20px 24px;color:var(--dim)">No earnings brief available.</p>`;
   openDetail(ticker+' — Analysis',body);
 }
 
+// Markdown halves of a report, in display order.
+function reportBodyHtml(r){
+  if(!r)return '';
+  let h='';
+  if(r.portfolio_decision_md)h+=`<div class="pm-header">Portfolio Manager Decision</div><div class="pm-body">${md(r.portfolio_decision_md)}</div>`;
+  if(r.earnings_brief_md)h+=`<div class="brief-header">Pre-Earnings Brief &amp; Scores</div>${md(r.earnings_brief_md)}`;
+  return h;
+}
+
+// Fetch + cache a ticker's report bodies onto the in-memory record.
+const _rptCache=new Map();
+async function fetchReport(runId,ticker){
+  const key=runId+'/'+ticker;
+  if(_rptCache.has(key))return _rptCache.get(key);
+  const res=await fetch(`/api/report?run=${encodeURIComponent(runId)}&ticker=${encodeURIComponent(ticker)}`);
+  if(!res.ok)throw new Error(res.status===404?'report not found on disk':'server error '+res.status);
+  const data=await res.json();
+  _rptCache.set(key,data);
+  const run=(DATA.screening_runs||[]).find(x=>x.id===runId);
+  const rec=run&&(run.tickers||[]).find(x=>x.ticker===ticker);
+  if(rec){rec.earnings_brief_md=data.earnings_brief_md;rec.portfolio_decision_md=data.portfolio_decision_md;}
+  return data;
+}
+
 // ── Trades ─────────────────────────────────────────────────────────────────
+// The log runs to thousands of fills; the first payload carries the most recent
+// few hundred and older ones are pulled a page at a time.
+async function loadMoreTrades(btn){
+  if(btn){btn.disabled=true;btn.textContent='Loading…';}
+  try{
+    const have=(DATA.trades||[]).length;
+    const res=await fetch(`/api/trades?limit=300&offset=${have}`);
+    if(!res.ok)throw new Error('server error '+res.status);
+    const payload=await res.json();
+    const older=Array.isArray(payload)?payload:(payload.trades||[]);
+    if(!Array.isArray(payload)&&payload.total!=null)DATA.total_trades=payload.total;
+    DATA.trades=older.concat(DATA.trades||[]);      // log is oldest-first
+    renderTrades();
+  }catch(e){
+    if(btn){btn.disabled=false;btn.textContent='Load more — '+e.message;}
+  }
+}
+
 function renderTrades(){
   const all=consolidate(DATA.trades);
   let f=[...all];
@@ -1158,7 +1623,9 @@ function renderTrades(){
   const wins=f.filter(t=>t.pnl>0).length;
   const wr=f.length?wins/f.length*100:0;
 
-  let h=`<div class="ph"><h2>Trade History</h2><p>${all.length} consolidated positions from ${(DATA.trades||[]).length} fills</p></div>
+  const loadedFills=(DATA.trades||[]).length;
+  const totalFills=DATA.total_trades!=null?DATA.total_trades:loadedFills;
+  let h=`<div class="ph"><h2>Trade History</h2><p>${all.length} consolidated positions from ${loadedFills}${totalFills>loadedFills?` of ${totalFills}`:''} fills</p></div>
   <div class="filters">
     <input class="fi" placeholder="Search ticker…" style="width:150px" oninput="tradeFilter.q=this.value;renderTrades()" value="${esc(tradeFilter.q)}">
     <button class="fb ${tradeFilter.out==='all'?'on':''}" onclick="tradeFilter.out='all';renderTrades()">All</button>
@@ -1192,10 +1659,30 @@ function renderTrades(){
     </tr>`;
   });
   h+=`</tbody></table></div>`;
+  if(totalFills>loadedFills){
+    const more=Math.min(300,totalFills-loadedFills);
+    h+=`<div style="text-align:center;padding:16px 0"><button class="btn-run" onclick="loadMoreTrades(this)">Load ${more} older fill${more!==1?'s':''} <span style="opacity:.6;font-weight:400">(${loadedFills} of ${totalFills} loaded)</span></button></div>`;
+  }
   $('v-trades').innerHTML=h;
 }
 
 // ── Reflections ───────────────────────────────────────────────────────────────
+async function loadMoreReflections(btn){
+  if(btn){btn.disabled=true;btn.textContent='Loading…';}
+  try{
+    const have=(DATA.reflections||[]).length;
+    const res=await fetch(`/api/reflections?limit=40&offset=${have}`);
+    if(!res.ok)throw new Error('server error '+res.status);
+    const {reflections,total}=await res.json();
+    const seen=new Set((DATA.reflections||[]).map(r=>r.id));
+    DATA.reflections=(DATA.reflections||[]).concat((reflections||[]).filter(r=>!seen.has(r.id)));
+    if(total!=null)DATA.total_reflections=total;
+    renderReflections();
+  }catch(e){
+    if(btn){btn.disabled=false;btn.textContent='Load more — '+e.message;}
+  }
+}
+
 function renderReflections(){
   const refs=DATA.reflections||[];
   let h=`<div class="ph"><h2>Trade Reflections</h2><p>${refs.length} post-mortem${refs.length!==1?'s':''} · click any card to read the full analysis</p></div>`;
@@ -1221,6 +1708,11 @@ function renderReflections(){
     });
     h+=`</div>`;
   }
+  const totalRefl=DATA.total_reflections!=null?DATA.total_reflections:refs.length;
+  if(totalRefl>refs.length){
+    const more=Math.min(40,totalRefl-refs.length);
+    h+=`<div style="text-align:center;padding:16px 0"><button class="btn-run" onclick="loadMoreReflections(this)">Load ${more} older reflection${more!==1?'s':''} <span style="opacity:.6;font-weight:400">(${refs.length} of ${totalRefl} loaded)</span></button></div>`;
+  }
   $('v-reflections').innerHTML=h;
 }
 
@@ -1245,17 +1737,55 @@ function dashAvgReturn(group){
   return{val:sumPnl/group.length,pct:wSum?wSumPct/wSum:group.reduce((s,t)=>s+(t.pnl_pct||0),0)/group.length};
 }
 
+// Both portfolio returns need a *capital base* — the money actually at work —
+// not Σ of every position's notional. Those differ by the turnover: $15.7M was
+// traded across 1,322 fills while the account redeployed roughly $600-800k some
+// 26 times, so dividing by the sum reported +0.99% for what was a ~+18% period.
+//
+// Entry dates are not in the trade log (IBKR's Flex closing record omits the
+// open date), so exposure cannot be integrated over time. What can be proven
+// without them: trades exiting on the same day were all open on that day, so the
+// largest same-day exit notional is a hard lower bound on peak capital at work.
+// Conservative by construction — the true average base is lower, so this
+// understates the return rather than flattering it.
+function dashCapitalBase(trades){
+  const byDay=new Map();
+  trades.forEach(t=>{
+    const d=t.exit_date,cb=dashCostBasis(t);
+    if(d&&cb>0)byDay.set(d,(byDay.get(d)||0)+cb);
+  });
+  let base=0,peakDay=null;
+  byDay.forEach((v,d)=>{if(v>base){base=v;peakDay=d;}});
+  return{base:base||null,peakDay};
+}
+
 function dashComputeReturns(trades){
   const valid=trades.filter(t=>t.pnl!=null);
   if(!valid.length)return null;
   const sorted=[...valid].sort((a,b)=>(a.exit_date||'').localeCompare(b.exit_date||''));
-  let twrFactor=1,totalCost=0,totalPnl=0;
-  sorted.forEach(t=>{const cb=dashCostBasis(t),p=t.pnl||0;totalPnl+=p;if(cb&&cb>0){twrFactor*=(1+p/cb);totalCost+=cb;}else if(t.pnl_pct!=null){twrFactor*=(1+t.pnl_pct/100);}});
-  const twr=twrFactor-1,mwr=totalCost>0?totalPnl/totalCost:null;
+  const totalPnl=sorted.reduce((s,t)=>s+(t.pnl||0),0);
+  const totalCost=sorted.reduce((s,t)=>s+(dashCostBasis(t)||0),0);
+  const {base,peakDay}=dashCapitalBase(sorted);
+
   const dates=sorted.map(t=>t.exit_date).filter(Boolean);
-  let days=dates.length>=2?(new Date(dates[dates.length-1])-new Date(dates[0]))/86400000:0;
-  const ann=r=>days>=7?Math.pow(1+r,365/days)-1:null;
-  return{twr,twrAnn:ann(twr),mwr,mwrAnn:mwr!==null?ann(mwr):null,days:Math.round(days),totalCost,totalPnl};
+  const days=dates.length>=2?(new Date(dates[dates.length-1])-new Date(dates[0]))/86400000:0;
+  const ann=r=>(days>=7&&r!=null&&r>-1)?Math.pow(1+r,365/days)-1:null;
+
+  // TWR chain-links *daily* returns. Multiplying 1,322 per-trade HPRs treated
+  // concurrent positions as if each reinvested the previous one's proceeds —
+  // which is what turned a ~+18% account into a reported +1,580%.
+  let twr=null;
+  if(base>0){
+    const pnlByDay=new Map();
+    sorted.forEach(t=>{if(t.exit_date)pnlByDay.set(t.exit_date,(pnlByDay.get(t.exit_date)||0)+(t.pnl||0));});
+    let f=1;
+    [...pnlByDay.keys()].sort().forEach(d=>{f*=(1+pnlByDay.get(d)/base);});
+    twr=f-1;
+  }
+  const mwr=base>0?totalPnl/base:null;
+  return{twr,twrAnn:ann(twr),mwr,mwrAnn:mwr!==null?ann(mwr):null,
+         days:Math.round(days),totalCost,totalPnl,base,peakDay,
+         turnover:base>0?totalCost/base:null};
 }
 
 function dashGetDisplay(){
@@ -1331,7 +1861,19 @@ function dashRenderDashReturns(trades){
   if(!r){['dp-s-twr','dp-s-twr-ann','dp-s-mwr','dp-s-mwr-ann'].forEach(id=>{const el=$(id);if(el){el.textContent='—';el.className='stat-value';}});$('dp-s-returns-meta')&&($('dp-s-returns-meta').textContent='');return;}
   const sv=(id,val)=>{const el=$(id);if(!el)return;el.textContent=val!=null?dpR(val):'—';el.className='stat-value '+(val!=null?dcc(val):'');};
   sv('dp-s-twr',r.twr);sv('dp-s-twr-ann',r.twrAnn);sv('dp-s-mwr',r.mwr);sv('dp-s-mwr-ann',r.mwrAnn);
-  $('dp-s-returns-meta')&&($('dp-s-returns-meta').textContent=r.days>0?`${r.days}-day period · capital deployed: ${dm(Math.round(r.totalCost))}`:'single-day period · no annualization');
+  // Show the base the returns are actually divided by, and the turnover that
+  // separates it from Σ notional — the two numbers whose confusion caused the bug.
+  const meta=$('dp-s-returns-meta');
+  if(meta){
+    meta.textContent=r.days>0
+      ? `${r.days}-day period · capital base ${dm(Math.round(r.base))}`
+        +(r.peakDay?` (peak open ${r.peakDay})`:'')
+        +(r.turnover?` · ${r.turnover.toFixed(1)}× turnover, ${dm(Math.round(r.totalCost))} traded`:'')
+      : 'single-day period · no annualization';
+    meta.title='Capital base = the largest notional exiting on any one day, a provable '
+      +'lower bound on capital open at once. Entry dates are not in the trade log, so true '
+      +'average exposure cannot be measured; this errs low, understating the return.';
+  }
 }
 
 function dashRenderCharts(trades){dashBuildCum(trades);dashBuildMonthly(trades);dashBuildTicker(trades);dashBuildDir(trades);}
@@ -1451,7 +1993,7 @@ function dashClearFilters(){
 // ── Run tab ───────────────────────────────────────────────────────────────────
 const PROVIDERS = ['deepseek','openai','anthropic','google','xai','openrouter','ollama'];
 const MODELS = {
-  deepseek:   ['deepseek-chat','deepseek-reasoner'],
+  deepseek:   ['deepseek-v4-flash','deepseek-v4-pro'],
   openai:     ['gpt-4.1','gpt-4o','o3','o4-mini'],
   anthropic:  ['claude-opus-4-7','claude-sonnet-4-6','claude-haiku-4-5-20251001'],
   google:     ['gemini-2.5-pro','gemini-2.0-flash'],
@@ -1470,6 +2012,7 @@ function renderRun(){
   function depthSel(id,def='3'){return`<select id="${id}"><option value="1"${def==='1'?' selected':''}>Shallow (1 round)</option><option value="3"${def==='3'?' selected':''}>Medium (3 rounds)</option><option value="5"${def==='5'?' selected':''}>Deep (5 rounds)</option></select>`;}
 
   $('v-run').innerHTML = `
+<div class="ds-warn-slot">${dsWarnHtml()}</div>
 <div class="ph"><h2>Run</h2><p>Launch individual analysis jobs. To screen earnings calendar picks, go to <span style="color:var(--accent);cursor:pointer" onclick="go('screenings')">Screenings</span>.</p></div>
 <div class="run-grid">
   <div class="run-card">
@@ -1477,9 +2020,9 @@ function renderRun(){
     <p>Batch analysis across multiple tickers with earnings scoring and allocation.</p>
     <div class="form-field"><label>Tickers (comma-separated)</label><input type="text" id="sc-tickers" placeholder="AAPL, MSFT, NVDA"></div>
     <div class="form-row"><div><label>Date</label><input type="date" id="sc-date" value="${today}"></div><div><label>Budget ($)</label><input type="number" id="sc-budget" value="100000" min="1000"></div></div>
-    <div class="form-row"><div><label>Depth</label>${depthSel('sc-depth')}</div><div><label>Workers</label><input type="number" id="sc-workers" value="1" min="1" max="8"></div></div>
+    <div class="form-row"><div><label>Depth</label>${depthSel('sc-depth')}</div><div><label>Workers</label><input type="number" id="sc-workers" value="16" min="1" max="16"></div></div>
     <div class="form-row"><div><label>Provider</label><select id="sc-prov" onchange="updateModels('sc')">${provOpts()}</select></div></div>
-    <div class="form-row"><div><label>Quick model</label><select id="sc-qm">${mdOpts('deepseek','deepseek-chat')}</select></div><div><label>Deep model</label><select id="sc-dm">${mdOpts('deepseek','deepseek-reasoner')}</select></div></div>
+    <div class="form-row"><div><label>Quick model</label><select id="sc-qm">${mdOpts('deepseek','deepseek-v4-flash')}</select></div><div><label>Deep model</label><select id="sc-dm">${mdOpts('deepseek','deepseek-v4-pro')}</select></div></div>
     <div class="form-field"><label>Analysts</label><div class="checkrow" id="sc-analysts">${analystsCheck()}</div></div>
     <button class="btn-run" onclick="runJob('screen','sc')">Run Screen</button>
     <span id="sc-status" class="job-status" style="display:none"></span>
@@ -1490,7 +2033,7 @@ function renderRun(){
     <p>Single-ticker deep-dive with full agent pipeline.</p>
     <div class="form-row"><div><label>Ticker</label><input type="text" id="an-ticker" placeholder="SPY" style="text-transform:uppercase"></div><div><label>Date</label><input type="date" id="an-date" value="${today}"></div></div>
     <div class="form-row"><div><label>Depth</label>${depthSel('an-depth')}</div><div><label>Provider</label><select id="an-prov" onchange="updateModels('an')">${provOpts()}</select></div></div>
-    <div class="form-row"><div><label>Quick model</label><select id="an-qm">${mdOpts('deepseek','deepseek-chat')}</select></div><div><label>Deep model</label><select id="an-dm">${mdOpts('deepseek','deepseek-reasoner')}</select></div></div>
+    <div class="form-row"><div><label>Quick model</label><select id="an-qm">${mdOpts('deepseek','deepseek-v4-flash')}</select></div><div><label>Deep model</label><select id="an-dm">${mdOpts('deepseek','deepseek-v4-pro')}</select></div></div>
     <div class="form-field"><label>Analysts</label><div class="checkrow" id="an-analysts">${analystsCheck()}</div></div>
     <button class="btn-run" onclick="runJob('analyze','an')">Run Analysis</button>
     <span id="an-status" class="job-status" style="display:none"></span>
@@ -1509,7 +2052,7 @@ function renderRun(){
     <p>Post-mortem analysis on a closed trade from your trade history.</p>
     <div class="form-row"><div><label>Ticker</label><input type="text" id="rf-ticker" placeholder="AAPL"></div><div><label>Exit date</label><input type="date" id="rf-date"></div></div>
     <div class="form-row"><div><label>Provider</label><select id="rf-prov" onchange="updateModels('rf')">${provOpts()}</select></div></div>
-    <div class="form-row"><div><label>Quick model</label><select id="rf-qm">${mdOpts('deepseek','deepseek-chat')}</select></div><div><label>Deep model</label><select id="rf-dm">${mdOpts('deepseek','deepseek-chat')}</select></div></div>
+    <div class="form-row"><div><label>Quick model</label><select id="rf-qm">${mdOpts('deepseek','deepseek-v4-flash')}</select></div><div><label>Deep model</label><select id="rf-dm">${mdOpts('deepseek','deepseek-v4-flash')}</select></div></div>
     <button class="btn-run" onclick="runJob('reflect','rf')">Run Reflection</button>
     <span id="rf-status" class="job-status" style="display:none"></span>
     <div class="job-log" id="rf-log"></div>
@@ -1517,7 +2060,7 @@ function renderRun(){
   <div class="run-card full">
     <h3>▶ Improve</h3>
     <p>Run an LLM analysis across all trade reflections to generate actionable improvements to the pipeline, prompts, and scoring weights.</p>
-    <div class="form-row"><div><label>Provider</label><select id="imp-prov" onchange="updateModels('imp')">${provOpts()}</select></div><div><label>Model</label><select id="imp-dm">${mdOpts('deepseek','deepseek-reasoner')}</select></div></div>
+    <div class="form-row"><div><label>Provider</label><select id="imp-prov" onchange="updateModels('imp')">${provOpts()}</select></div><div><label>Model</label><select id="imp-dm">${mdOpts('deepseek','deepseek-v4-pro')}</select></div></div>
     <button class="btn-run" onclick="runJob('improve','imp')">Run Improvement Analysis</button>
     <span id="imp-status" class="job-status" style="display:none"></span>
     <div class="job-log" id="imp-log"></div>
@@ -1527,13 +2070,117 @@ function renderRun(){
     <p>Re-run the AI Council allocation on an existing screening run — useful to adjust the budget or regenerate after score corrections.</p>
     <div class="form-field"><label>Screening run</label><select id="alc-run" style="width:100%"><option value="">Loading…</option></select></div>
     <div class="form-row"><div><label>Date</label><input type="date" id="alc-date" value="${today}" style="color-scheme:dark"></div><div><label>Budget ($)</label><input type="number" id="alc-budget" value="100000" min="1000"></div></div>
-    <div class="form-row"><div><label>Provider</label><select id="alc-prov" onchange="updateModels('alc')">${provOpts()}</select></div><div><label>Model</label><select id="alc-dm">${mdOpts('deepseek','deepseek-reasoner')}</select></div></div>
+    <div class="form-row"><div><label>Provider</label><select id="alc-prov" onchange="updateModels('alc')">${provOpts()}</select></div><div><label>Model</label><select id="alc-dm">${mdOpts('deepseek','deepseek-v4-pro')}</select></div></div>
     <button class="btn-run" onclick="runJob('allocate','alc')">Run Allocation</button>
     <span id="alc-status" class="job-status" style="display:none"></span>
     <div class="job-log" id="alc-log"></div>
   </div>
+  <div class="run-card full">
+    <h3>▶ Resume</h3>
+    <p>Finish a run that was interrupted — a killed server, a crash, a closed laptop. Screens only the tickers still missing, into the same folder, then rebuilds the table and re-runs allocation.</p>
+    <div class="form-row"><div><label>Budget ($)</label><input type="number" id="rsm-budget" value="100000" min="1000"></div><div><label>Workers</label><input type="number" id="rsm-workers" value="16" min="1" max="16"></div></div>
+    <div id="rsm-list" style="margin-top:10px"><span class="c-dim">Loading resumable runs…</span></div>
+    <span id="rsm-status" class="job-status" style="display:none"></span>
+    <div class="job-log" id="rsm-log"></div>
+  </div>
 </div>`;
   loadScreeningRunsDropdown();
+  loadResumeCandidates();
+}
+
+// ── Resume (interrupted runs) ─────────────────────────────────────────────────
+async function loadResumeCandidates(){
+  const el=$('rsm-list');if(!el)return;
+  try{
+    const res=await fetch('/api/resume/candidates');
+    if(!res.ok)throw new Error('endpoint unavailable — restart the dashboard server to pick it up');
+    const runs=await res.json();
+    if(!runs.length){el.innerHTML='<span class="c-dim">Nothing to resume — every recent run is complete.</span>';return;}
+    el.innerHTML=`<div class="tw"><div style="overflow-x:auto"><table class="dt">
+<thead><tr><th>Run</th><th>Screened</th><th>Missing</th><th>Allocation</th><th>Universe</th><th></th></tr></thead>
+<tbody>${runs.map(r=>{
+  const miss=r.missing?`<span style="color:var(--warn);font-weight:700">${r.missing}</span>`:'<span class="c-dim">0</span>';
+  const alloc=r.has_allocation?'<span class="c-dim">present</span>':'<span style="color:var(--warn)">missing</span>';
+  const src=r.universe_source==='calendar'?'calendar':'<span title="No calendar entry for this run — only started-but-empty folders can be detected">folder only</span>';
+  return `<tr>
+    <td style="font-family:var(--mono);font-size:11.5px">${esc(r.name)}</td>
+    <td class="num">${r.done}/${r.total}</td>
+    <td class="num">${miss}</td>
+    <td style="font-size:11.5px">${alloc}</td>
+    <td style="font-size:11px;color:var(--dim)">${src}</td>
+    <td><button class="wl-btn buy" onclick="runResume('${esc(r.name)}',this)">▶ Resume</button></td>
+  </tr>`;}).join('')}</tbody></table></div></div>`;
+  }catch(e){
+    el.innerHTML=`<span class="c-dim">Could not load resumable runs: ${esc(e.message)}</span>`;
+  }
+}
+
+// Callable from the Run view's Resume card *and* from any screening run card,
+// so the log targets may not exist — fall back to the banner alone.
+async function runResume(runName,btn){
+  const label=btn?btn.textContent:'▶ Resume';
+  const workers=+(($('rsm-workers')||{}).value)||16;
+  const budget=+(($('rsm-budget')||{}).value)||100000;
+  if(btn){btn.disabled=true;btn.textContent='checking…';}
+  try{
+    // Preflight: say exactly what will run before committing hours of work.
+    const pr=await fetch(`/api/resume/plan?run=${encodeURIComponent(runName)}`);
+    if(!pr.ok){
+      // A 404 means either "no such run" or "no such route" — and the second is
+      // the likely one, because the server only learns this route on restart.
+      // FastAPI's unknown-route body is a bare {"detail":"Not Found"}; ours names
+      // the run. Reporting "run not found" for a stale server sent one debugging
+      // session chasing a folder that was sitting right there.
+      let detail='';
+      try{detail=((await pr.json())||{}).detail||'';}catch(e){}
+      throw new Error(
+        pr.status===404&&/^run not found/i.test(detail) ? detail :
+        pr.status===404 ? 'this dashboard server predates the resume feature — restart it to pick up /api/resume'
+                        : `server error ${pr.status}${detail?': '+detail:''}`);
+    }
+    const p=await pr.json();
+    const mins=Math.round(p.missing.length*20/Math.max(1,workers));
+    const extra=(p.calendar_extra||[]).length;
+    const extraNote=extra?`\n\n(${extra} other ticker(s) reported that day but were not part of this run — they will NOT be screened.)`:'';
+    const msg=p.missing.length
+      ? `Resume ${p.name}?\n\n${p.done}/${p.total} screened · ${p.missing.length} missing\nFirst: ${p.missing.slice(0,8).join(', ')}${p.missing.length>8?'…':''}\n\n${workers} workers ≈ ${mins} min, then allocation at $${budget.toLocaleString()}.${extraNote}`
+      : `${p.name} has every ticker screened.\n\nRe-run the table${p.has_allocation?' and allocation (overwrites the existing one)':' and run the missing allocation'}?${extraNote}`;
+    if(!confirm(msg)){if(btn){btn.disabled=false;btn.textContent=label;}return;}
+
+    const logEl=$('rsm-log'), statusEl=$('rsm-status');
+    if(logEl){logEl.textContent='';logEl.classList.add('active');}
+    if(statusEl){statusEl.style.display='inline-flex';statusEl.className='job-status running';statusEl.textContent='⟳ running';}
+    if(btn)btn.textContent='starting…';
+
+    const res=await fetch('/api/jobs',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({type:'resume',params:{run_name:runName,budget,workers}})});
+    if(!res.ok)throw new Error(await res.text()||res.status);
+    const {job_id}=await res.json();
+    _bnrShow('resume',job_id);
+    if(btn)btn.textContent='running…';
+    if(logEl&&statusEl){
+      _streamJob(job_id,logEl,statusEl,()=>{if(btn){btn.disabled=false;btn.textContent=label;}loadResumeCandidates();});
+    }else{
+      // Started from a run card — the banner tracks it from here.
+      _streamJob(job_id,{textContent:'',classList:{add(){}}},{className:'',textContent:'',style:{}},
+                 ()=>{if(btn){btn.disabled=false;btn.textContent=label;}});
+    }
+  }catch(e){
+    alert('Resume failed: '+e.message);
+    if(btn){btn.disabled=false;btn.textContent=label;}
+  }
+}
+
+// Shared websocket log pump (same protocol runJob uses).
+function _streamJob(jobId,logEl,statusEl,done){
+  const proto=location.protocol==='https:'?'wss:':'ws:';
+  const ws=new WebSocket(`${proto}//${location.host}/ws/${jobId}`);
+  ws.onmessage=e=>{
+    if(e.data==='__DONE__'){statusEl.className='job-status done';statusEl.textContent='✓ done';_bnrHide('resume');if(done)done();return;}
+    if(e.data==='__ERROR__'){statusEl.className='job-status error';statusEl.textContent='✕ error';_bnrHide('resume');if(done)done();return;}
+    logEl.textContent+=e.data+'\n';logEl.scrollTop=logEl.scrollHeight;
+  };
+  ws.onerror=()=>{statusEl.className='job-status error';statusEl.textContent='connection error';if(done)done();};
 }
 
 function updateModels(prefix){
@@ -1649,9 +2296,8 @@ async function runJob(type, prefix){
       statusEl.textContent = '✓ done';
       btn.disabled = false;
       // Refresh screenings data in the background so it's ready when user navigates there
-      if(type==='screen'||type==='analyze'||type==='allocate'){
-        _screeningsRefreshing=false;
-        fetch('/api/data').then(r=>r.ok?r.json():null).then(fresh=>{if(fresh)Object.assign(DATA,fresh);}).catch(()=>{});
+      if(type==='screen'||type==='analyze'||type==='allocate'||type==='resume'){
+        _screeningsRefreshing=false;_scrPullRuns();
       }
       return;
     }
@@ -1819,6 +2465,8 @@ function screenCalendarDay(date) {
   const dateInput   = document.getElementById('sc-date');
   if (tickerInput) tickerInput.value = checked.join(', ');
   if (dateInput)   dateInput.value   = date;
+  const workersInput = document.getElementById('sc-workers');
+  if (workersInput) workersInput.value = 16;   // batch screens want the full pool
   if (tickerInput) setTimeout(() => tickerInput.scrollIntoView({behavior:'smooth', block:'center'}), 80);
 }
 
@@ -1929,40 +2577,128 @@ async function renderPerformance(){
 }
 
 // ── Activity banner ────────────────────────────────────────────────────────────
-let _bnrDismissed=false;
-let _bnrActiveJobs=new Map(); // type -> jobId
-const _bnrLabels={screen:'Screening',analyze:'Analysis',calibrate:'Calibration',reflect:'Reflection',improve:'Improvement',allocate:'Allocation'};
+// Keyed by job id, not type, and driven by /api/jobs — which merges this process's
+// jobs with the durable registry, so detached runs and jobs that outlived a server
+// restart show up here too. Anything running is visible; that is the whole point.
+let _bnrDismissed=null;          // signature of the job set the user dismissed
+let _bnrActiveJobs=new Map();    // id -> {id,type,label,status,progress,external,run_dir,log_path}
+const _bnrLabels={screen:'Screening',analyze:'Analysis',calibrate:'Calibration',reflect:'Reflection',improve:'Improvement',allocate:'Allocation',resume:'Resume'};
 let _bnrLogWs=null;
 
-function hideBanner(){_bnrDismissed=true;$('run-banner').classList.remove('visible');}
+const _bnrSig=()=>[..._bnrActiveJobs.keys()].sort().join(',');
+function hideBanner(){_bnrDismissed=_bnrSig();$('run-banner').classList.remove('visible');}
 
 function _bnrShow(type,jobId){
-  _bnrDismissed=false;
-  _bnrActiveJobs.set(type,jobId||null);
+  const id=jobId||('local-'+type);
+  _bnrDismissed=null;
+  _bnrActiveJobs.set(id,{id:jobId||null,type,label:_bnrLabels[type]||type,status:'running'});
   _bnrUpdate();
 }
 function _bnrHide(type){
-  _bnrActiveJobs.delete(type);
+  [..._bnrActiveJobs].forEach(([id,j])=>{if(j.type===type)_bnrActiveJobs.delete(id);});
   _bnrUpdate();
+}
+
+function _bnrJobText(j){
+  const label=j.label||_bnrLabels[j.type]||j.type;
+  const p=j.progress;
+  const prog=(p&&p.done!=null)?` ${p.done}${p.total?'/'+p.total:''}${p.pct!=null?` (${p.pct}%)`:''}`:'';
+  return label+prog;
 }
 function _bnrUpdate(){
   const banner=$('run-banner');
-  if(!_bnrDismissed&&_bnrActiveJobs.size>0){
-    const names=[..._bnrActiveJobs.keys()].map(t=>_bnrLabels[t]||t);
-    $('bnr-text').textContent=names.join(', ')+' running — tap to view log';
-    banner.classList.add('visible');
-  } else if(_bnrActiveJobs.size===0){
-    banner.classList.remove('visible');
+  const jobs=[..._bnrActiveJobs.values()];
+  if(!jobs.length){banner.classList.remove('visible');return;}
+  if(_bnrDismissed===_bnrSig()){banner.classList.remove('visible');return;}
+  const stopping=jobs.filter(j=>j.status==='cancelling');
+  const verb=stopping.length===jobs.length?'stopping':'running';
+  const txt=jobs.length>1
+    ? `${jobs.length} jobs ${verb} — ${jobs.map(_bnrJobText).join(' · ')}`
+    : `${_bnrJobText(jobs[0])} ${verb}`;
+  const tail=jobs.some(j=>j.external)?' — tap for details':' — tap to view log';
+  $('bnr-text').textContent=txt+tail;
+  // Only jobs the server actually knows by id can be stopped; a local optimistic
+  // entry has no id yet.
+  const btn=$('bnr-stop');
+  if(btn){
+    const stoppable=jobs.filter(j=>j.id&&j.status!=='cancelling');
+    btn.style.display=stoppable.length?'':'none';
+    btn.textContent=stoppable.length>1?`■ Stop…`:'■ Stop';
+    btn.disabled=false;
+  }
+  banner.classList.add('visible');
+}
+
+// ── Stopping a job ─────────────────────────────────────────────────────────────
+// Cooperative on the server side: queued tickers are never started, in-flight
+// ones finish. Say so plainly rather than implying an instant kill.
+const _STOP_NOTE='Tickers already in progress finish first (up to a few minutes); nothing new starts.\n\nWhatever finished is kept, and Resume can pick the run up later.';
+
+async function stopJob(id,label,btn){
+  if(btn){btn.disabled=true;btn.textContent='Stopping…';}
+  try{
+    const res=await fetch(`/api/jobs/${encodeURIComponent(id)}/stop`,{method:'POST'});
+    const body=await res.json().catch(()=>({}));
+    if(!res.ok)throw new Error(body.detail||res.status);
+    const j=_bnrActiveJobs.get(id);
+    if(j){j.status=body.status||'cancelling';_bnrUpdate();}
+    _pollJobs();
+    return body;
+  }catch(e){
+    alert(`Could not stop ${label||id}: ${e.message}`);
+    if(btn){btn.disabled=false;btn.textContent='■ Stop';}
+    return null;
   }
 }
 
+function bnrStop(){
+  const jobs=[..._bnrActiveJobs.values()].filter(j=>j.id&&j.status!=='cancelling');
+  if(!jobs.length)return;
+  if(jobs.length>1){openStopPicker(jobs);return;}
+  const j=jobs[0],name=_bnrJobText(j);
+  if(!confirm(`Stop ${name}?\n\n${_STOP_NOTE}`))return;
+  stopJob(j.id,name,$('bnr-stop'));
+}
+
+// More than one job in flight — never guess which one the user meant.
+function openStopPicker(jobs){
+  $('bnr-log-title').textContent='Stop a running job';
+  $('bnr-log-status').style.display='none';
+  const pre=$('bnr-log-pre');
+  pre.style.whiteSpace='normal';
+  pre.innerHTML=`<div style="font-family:var(--sans);color:var(--muted);margin-bottom:12px">${esc(_STOP_NOTE).replace(/\n\n/g,'<br><br>')}</div>`
+    +jobs.map(j=>`<div class="job-stop-row" id="jsr-${esc(j.id)}">
+      <span class="jsr-name">${esc(_bnrJobText(j))}</span>
+      <span class="jsr-meta">${j.external?'other process':'this server'}${j.run_dir?' · '+esc(String(j.run_dir).split('/').pop()):''}</span>
+      <button class="bnr-stop" style="margin-left:0" onclick="stopJob('${esc(j.id)}','${esc(_bnrJobText(j))}',this)">■ Stop</button>
+    </div>`).join('');
+  $('bnr-log-modal').classList.add('open');
+}
+
 function openBannerLog(){
-  const entries=[..._bnrActiveJobs.entries()];
-  if(!entries.length) return;
-  const [type,jobId]=entries[0];
-  if(!jobId) return;
+  const jobs=[..._bnrActiveJobs.values()];
+  if(!jobs.length) return;
+  const j=jobs.find(x=>x.id&&!x.external)||jobs[0];
+  const type=j.type, jobId=j.id;
   const logEl=$('bnr-log-pre');
-  $('bnr-log-title').textContent=(_bnrLabels[type]||type)+' Log';
+  logEl.innerHTML='';logEl.style.whiteSpace='pre-wrap';   // reset if the stop picker used it
+  $('bnr-log-status').style.display='';
+  $('bnr-log-title').textContent=(j.label||_bnrLabels[type]||type)+' Log';
+  // A job from another process has no websocket here — show where its log lives.
+  if(j.external||!jobId){
+    $('bnr-log-status').className='job-status running';
+    $('bnr-log-status').textContent=j.status||'running';
+    const p=j.progress;
+    logEl.textContent=[
+      `${j.label||type} — started outside this server process, so its live log is not streamed here.`,
+      j.run_dir?`\nrun folder : ${j.run_dir}`:'',
+      p&&p.done!=null?`progress   : ${p.done}${p.total?' / '+p.total:''}${p.pct!=null?`  (${p.pct}%)`:''}`:'',
+      j.log_path?`log        : tail -f ${j.log_path}`:'',
+      j.started_at?`started    : ${new Date(j.started_at).toLocaleString()}`:'',
+    ].filter(Boolean).join('\n');
+    $('bnr-log-modal').classList.add('open');
+    return;
+  }
   $('bnr-log-status').className='job-status running';
   $('bnr-log-status').textContent='running';
   logEl.textContent='';
@@ -1990,21 +2726,32 @@ async function _pollJobs(){
     const res=await fetch('/api/jobs');
     if(!res.ok)return;
     const jobs=await res.json();
-    const running=Array.isArray(jobs)?jobs.filter(j=>j.status==='running'):[];
-    if(running.length){
-      running.forEach(j=>{ if(!_bnrActiveJobs.has(j.type)) _bnrActiveJobs.set(j.type,j.id); });
-      if(!_bnrDismissed){
-        const names=running.map(j=>_bnrLabels[j.type]||j.type);
-        const txt=running.length>1?`${running.length} jobs (${names.join(', ')})`:names[0];
-        $('bnr-text').textContent=txt+' running — tap to view log';
-        $('run-banner').classList.add('visible');
-      }
-    } else if(_bnrActiveJobs.size===0){
-      $('run-banner').classList.remove('visible');
-    }
+    if(!Array.isArray(jobs))return;
+    // `cancelling` still counts as in flight: the work is unwinding, and hiding
+    // it would recreate the invisible-run problem the banner exists to prevent.
+    const running=jobs.filter(j=>j.status==='running'||j.status==='cancelling');
+    // Server list is authoritative: rebuild rather than accumulate, so finished
+    // jobs actually clear instead of pinning the banner until a reload.
+    const before=_bnrSig();
+    const optimistic=[..._bnrActiveJobs].filter(([id])=>id.startsWith('local-'));
+    _bnrActiveJobs=new Map(running.map(j=>[j.id,j]));
+    // keep a just-submitted local job until the server reports it
+    optimistic.forEach(([id,j])=>{if(![..._bnrActiveJobs.values()].some(x=>x.type===j.type))_bnrActiveJobs.set(id,j);});
+    if(_bnrSig()!==before&&_bnrDismissed!==_bnrSig())_bnrDismissed=null;  // new work un-dismisses
+    _bnrUpdate();
+    _resumeBadge(jobs.filter(j=>j.status==='interrupted').length);
   }catch(e){}
 }
 setInterval(_pollJobs,3000);
+
+// Sidebar hint that something died and can be resumed.
+function _resumeBadge(n){
+  const el=$('ni-run');if(!el)return;
+  let b=el.querySelector('.wl-nav-badge');
+  if(!n){if(b)b.remove();return;}
+  if(!b){b=document.createElement('span');b.className='wl-nav-badge hot';el.appendChild(b);}
+  b.textContent=n;b.title=`${n} interrupted job(s) — resumable from the Run view`;
+}
 
 // ── Mobile sidebar ─────────────────────────────────────────────────────────────
 function mobToggle(){
@@ -2018,10 +2765,237 @@ function mobClose(){
   document.body.style.overflow='';
 }
 
+// ── Watchlist (#19) ───────────────────────────────────────────────────────────
+let wlData=(DATA.watchlist||[]).slice();
+let wlTimer=null;
+const WL_ORDER={TRIGGERED:0,ARMED:1,PENDING:2,UNKNOWN:3,EXPIRED:4};
+// Buttons write through the API — meaningless in a static build (file:// or build-web).
+const wlCanAct=usePath;
+
+function wlOpen(){return wlData.filter(e=>!e.user_state);}
+function wlActionable(){return wlOpen().filter(e=>e.status==='TRIGGERED'||e.status==='ARMED');}
+
+function wlUpdateBadge(){
+  const b=$('wl-badge');if(!b)return;
+  const hot=wlOpen().filter(e=>e.status==='TRIGGERED').length;
+  const act=wlActionable().length;
+  if(act===0){b.style.display='none';return;}
+  b.style.display='';b.textContent=act;b.classList.toggle('hot',hot>0);
+}
+
+// Mark bought / drop the alert / undo either. Optimistic disable, server is truth.
+async function wlAction(runId,ticker,action,btn){
+  if(action==='dismissed'&&!confirm(`Remove the ${ticker} watch alert?\n\nIt moves to Dismissed, where you can restore it.`))return;
+  const btns=btn?btn.closest('.wl-acts').querySelectorAll('button'):[];
+  btns.forEach(b=>b.disabled=true);
+  try{
+    const res=await fetch('/api/watchlist/action',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({run_id:runId,ticker:ticker,action:action})});
+    if(!res.ok)throw new Error((await res.text())||res.status);
+    wlData=await res.json();
+    wlUpdateBadge();renderWatchlist(true);
+  }catch(e){
+    btns.forEach(b=>b.disabled=false);
+    alert('Could not update the watchlist: '+e.message);
+  }
+}
+
+function wlActsHtml(e){
+  if(!wlCanAct)return'<span class="c-dim">—</span>';
+  const args=`'${esc(e.run_id||'')}','${esc(e.ticker)}'`;
+  if(e.user_state)return`<div class="wl-acts"><button class="wl-btn" onclick="wlAction(${args},'reset',this)">↺ Undo</button></div>`;
+  return`<div class="wl-acts">
+    <button class="wl-btn buy" title="Record that you bought this" onclick="wlAction(${args},'purchased',this)">✓ Purchased</button>
+    <button class="wl-btn del" title="Remove this alert" onclick="wlAction(${args},'dismissed',this)">✕ Delete</button>
+  </div>`;
+}
+
+// Signature of everything the watchlist UI actually draws. Repainting when this
+// is unchanged is what made the page look stuttery: the embedded payload is now
+// live-accurate, so the confirming fetch usually has nothing to show.
+function wlSig(list){
+  return JSON.stringify((list||[]).map(e=>[e.run_id,e.ticker,e.status,e.current_price,e.distance_pct,e.user_state]));
+}
+let _wlSig=wlSig(wlData);
+
+function wlRefresh(then){
+  fetch('/api/watchlist').then(r=>r.ok?r.json():null).then(fresh=>{
+    if(!Array.isArray(fresh))return;
+    const sig=wlSig(fresh),changed=sig!==_wlSig;
+    _wlSig=sig;wlData=fresh;wlUpdateBadge();
+    if(then&&changed)then();
+  }).catch(()=>{});  // static build: keep the embedded snapshot
+}
+
+function wlWindowText(e){
+  if(e.status==='PENDING')return e.earnings_date?`arms after ${date(e.earnings_date)}`:'awaiting earnings date';
+  if(e.status==='EXPIRED')return'window closed';
+  if(e.status==='TRIGGERED')return e.hit_date?`hit ${date(e.hit_date)}`:'hit';
+  return`${e.sessions_left} of ${e.expiry_sessions} session(s) left`;
+}
+
+function wlDistHtml(e){
+  if(e.status==='TRIGGERED')return'<span class="wl-dist-hit">AT/BELOW TRIGGER</span>';
+  if(e.distance_pct==null)return'<span class="c-dim">—</span>';
+  const cls=e.distance_pct<=2?'wl-dist-close':'wl-dist-ok';
+  return`<span class="${cls}">${e.distance_pct>=0?'+':''}${e.distance_pct.toFixed(1)}% above</span>`;
+}
+
+function wlNowHtml(e){
+  if(e.current_price==null)return'<span class="c-dim">—</span>';
+  const px='$'+e.current_price.toFixed(2);
+  if(e.price_source==='live'){
+    const t=e.quote_time?new Date(e.quote_time).toLocaleTimeString():'';
+    return`${px}<span class="wl-live" title="Live quote${t?' · '+t:''}">●</span>`;
+  }
+  return`${px}<span class="wl-stale" title="Last daily close — no live quote available">●</span>`;
+}
+
+function wlStatusHtml(e){
+  const s=`<span class="badge b-${e.status.toLowerCase()}">${e.status}</span>`;
+  if(!e.user_state)return s;
+  const when=e.user_state_at?new Date(e.user_state_at).toLocaleDateString():'';
+  const at=(e.user_state==='purchased'&&e.user_price!=null)?` @ $${e.user_price.toFixed(2)}`:'';
+  return`<span class="badge b-${e.user_state}" title="${e.user_state}${when?' '+when:''}${at}">${e.user_state.toUpperCase()}</span>`;
+}
+
+function wlRow(e){
+  const trig=e.trigger_price!=null?'$'+e.trigger_price.toFixed(2):'—';
+  const drop=(e.spot_at_screen&&e.trigger_price)?(((e.trigger_price/e.spot_at_screen)-1)*100).toFixed(1)+'%':'—';
+  const res=e.watch_amount!=null?cur(e.watch_amount,true).replace('+',''):'—';
+  return`<tr>
+    <td style="font-weight:700">${esc(e.ticker)}</td>
+    <td>${wlStatusHtml(e)}</td>
+    <td style="font-family:var(--mono);font-weight:700">${trig}</td>
+    <td style="font-family:var(--mono)">${wlNowHtml(e)}</td>
+    <td>${wlDistHtml(e)}</td>
+    <td style="font-family:var(--mono)">${res}</td>
+    <td style="font-size:11px;color:var(--dim)">${wlWindowText(e)}</td>
+    <td style="font-size:11px;color:var(--dim)">${date(e.earnings_date)} <span style="color:var(--muted)">(${drop} plan)</span></td>
+    <td style="font-size:11px;color:var(--dim);max-width:320px">${esc(e.thesis||'')}</td>
+    <td>${wlActsHtml(e)}</td>
+  </tr>`;
+}
+
+function renderWatchlist(skipRefresh){
+  const open=wlOpen();
+  const live=open.filter(e=>e.status!=='EXPIRED').sort((a,b)=>(WL_ORDER[a.status]??9)-(WL_ORDER[b.status]??9)||(a.distance_pct??99)-(b.distance_pct??99));
+  const expired=open.filter(e=>e.status==='EXPIRED');
+  const bought=wlData.filter(e=>e.user_state==='purchased');
+  const dropped=wlData.filter(e=>e.user_state==='dismissed');
+  const hdr=`<thead><tr><th>Ticker</th><th>Status</th><th>Trigger</th><th>Now</th><th>Distance</th><th>Reserved</th><th>Window</th><th>Earnings</th><th>Entry Thesis</th><th>Actions</th></tr></thead>`;
+  const tbl=rows=>`<div class="tw"><div style="overflow-x:auto"><table class="dt">${hdr}<tbody>${rows.map(wlRow).join('')}</tbody></table></div></div>`;
+  const fold=(id,title,rows)=>!rows.length?'':`
+<div class="section" style="margin-top:18px">
+  <div class="sec-hd" style="cursor:pointer" onclick="const b=$('${id}');b.style.display=b.style.display==='none'?'':'none'">
+    <div class="sec-title" style="color:var(--muted)">${title} (${rows.length}) — click to toggle</div>
+  </div>
+  <div id="${id}" style="display:none">${tbl(rows)}</div>
+</div>`;
+  $('v-watchlist').innerHTML=`
+<div class="ph"><h2>Watchlist</h2><p>Conditional "wait &amp; decide" entries — skip the print, buy the dislocation at the trigger. Flag-only: place orders manually, then mark the row Purchased.</p></div>
+${live.length?tbl(live)
+  :`<div style="padding:40px;text-align:center;color:var(--muted)">No active watch entries. The council adds WATCH rows for quality names whose pre-print entry is unattractive.</div>`}
+${fold('wl-purchased','Purchased',bought)}
+${fold('wl-expired','Expired',expired)}
+${fold('wl-dismissed','Dismissed',dropped)}`;
+  if(!skipRefresh)wlRefresh(()=>{if(currentView()==='watchlist')renderWatchlist(true);});
+}
+
+// Keep the overview's TRIGGERED strip honest without a reload — a dislocation
+// entry going live is the one thing worth surfacing unprompted. Cheap now: the
+// server answers from a warm snapshot (~1 ms) and we repaint only on a change.
+setInterval(()=>{
+  if(!usePath||currentView()==='watchlist')return;   // wlAutoRefresh owns that view
+  wlRefresh(()=>{if(currentView()==='overview')wlPaintAlert();});
+},60000);
+
+// Keep the "Now" column honest while the view is open (quotes are TTL-cached server-side).
+function wlAutoRefresh(on){
+  if(wlTimer){clearInterval(wlTimer);wlTimer=null;}
+  if(on&&usePath)wlTimer=setInterval(()=>{
+    if(currentView()!=='watchlist'){wlAutoRefresh(false);return;}
+    wlRefresh(()=>renderWatchlist(true));
+  },60000);
+}
+
+// Repaint just the alert strip in place of a full renderOverview().
+function wlPaintAlert(){const el=$('wl-alert-slot');if(el)el.innerHTML=wlAlertHtml();}
+
+function wlAlertHtml(){
+  const hot=wlOpen().filter(e=>e.status==='TRIGGERED');
+  if(!hot.length)return'';   // slot stays in the DOM — nothing shifts when it fills
+  const names=hot.map(e=>`${esc(e.ticker)} ≤ $${e.trigger_price!=null?e.trigger_price.toFixed(2):'?'}`).join(' · ');
+  return`<div class="wl-alert" onclick="go('watchlist')"><span class="badge b-triggered">▲ TRIGGERED</span><span style="flex:1">${names} — dislocation entry live, review now</span><span style="color:var(--loss);font-weight:700">Open Watchlist →</span></div>`;
+}
+
+// ── DeepSeek peak / off-peak pricing ──────────────────────────────────────────
+// api-docs.deepseek.com/quick_start/pricing/ — "Peak hours are 01:00 - 04:00 and
+// 06:00 - 10:00 UTC, Monday through Friday (all other hours are off-peak)."
+// Off-peak is half price, so a screen run in peak hours costs exactly double.
+// v4-flash $0.44/$1.32 per Mtok peak vs $0.22/$0.66 off; v4-pro $1.32/$3.96 vs
+// $0.66/$1.98. All computed in UTC — never local time, which drifts with DST.
+const DS_PEAK_UTC=[[1,4],[6,10]];   // [startHour, endHour) UTC, weekdays only
+
+function dsIsPeak(d){
+  const day=d.getUTCDay();
+  if(day===0||day===6)return false;            // weekends are entirely off-peak
+  const h=d.getUTCHours()+d.getUTCMinutes()/60;
+  return DS_PEAK_UTC.some(([a,b])=>h>=a&&h<b);
+}
+
+// Next state flip. Minute-stepping rather than closed-form: the windows are
+// small and the weekend gap makes the arithmetic fiddly to get right, and the
+// worst case (Friday 10:00 UTC → Monday 01:00) is only ~3,800 cheap iterations.
+function dsNextFlip(from){
+  const cur=dsIsPeak(from);
+  let t=new Date(from.getTime()); t.setUTCSeconds(0,0);
+  for(let i=0;i<60*24*4;i++){
+    t=new Date(t.getTime()+60000);
+    if(dsIsPeak(t)!==cur)return t;
+  }
+  return null;
+}
+
+function dsGap(ms){
+  const m=Math.max(0,Math.round(ms/60000)),h=Math.floor(m/60);
+  if(h>=24)return `${Math.floor(h/24)}d ${h%24}h`;
+  return h?`${h}h ${m%60}m`:`${m}m`;
+}
+
+function dsRender(){
+  const el=$('ds-pricing'); if(!el)return;
+  const now=new Date(), peak=dsIsPeak(now), next=dsNextFlip(now);
+  const when=next?` · ${peak?'ends':'starts'} in ${dsGap(next-now)}`:'';
+  const at=next?next.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}):'';
+  el.className='ds-pill '+(peak?'ds-peak':'ds-off');
+  el.innerHTML=`<strong>DeepSeek · ${peak?'peak':'off-peak'}</strong>`
+    +`<span>${peak?'2× price':'half price'}${peak?when:` · peak${when.replace(' · starts','')}`}`
+    +`${at?` (${at})`:''}</span>`;
+  el.title='DeepSeek peak hours: 01:00-04:00 and 06:00-10:00 UTC, Mon-Fri.\n'
+    +'All other hours, and all weekend, are off-peak at half price.\n'
+    +(peak?'Screening now costs double — consider waiting.':'Cheapest time to screen.');
+  document.querySelectorAll('.ds-warn-slot').forEach(x=>x.innerHTML=dsWarnHtml());
+}
+
+// Only nags where it matters — the two views that launch screens, and only
+// while peak pricing is actually in force.
+function dsWarnHtml(){
+  if(!dsIsPeak(new Date()))return'';
+  const n=dsNextFlip(new Date());
+  return`<div class="ds-warn"><strong>DeepSeek peak pricing</strong>`
+    +`<span style="flex:1;color:var(--muted)">Every call costs 2× until off-peak resumes`
+    +`${n?` in ${dsGap(n-new Date())}`:''}. Screening now is twice the price.</span></div>`;
+}
+setInterval(dsRender,30000);
+
 // ── Boot ──────────────────────────────────────────────────────────────────────
 function render(v){
   if(v==='overview')    renderOverview();
   if(v==='screenings')  renderScreenings();
+  if(v==='analyses')    renderAnalyses();
+  if(v==='watchlist')   renderWatchlist();
+  wlAutoRefresh(v==='watchlist');
   if(v==='trades')      renderTrades();
   if(v==='reflections') renderReflections();
   if(v==='performance') renderPerformance();
@@ -2031,8 +3005,14 @@ function render(v){
 document.addEventListener('DOMContentLoaded',()=>{
   const ts=DATA.generated_at?new Date(DATA.generated_at).toLocaleString('en-US',{month:'short',day:'numeric',year:'numeric',hour:'2-digit',minute:'2-digit'}):'—';
   $('gen-ts').textContent=ts;
+  wlUpdateBadge();
+  dsRender();
   applyView(currentView());   // honor /screenings (or #screenings) on initial load / reload
-  setTimeout(_pollJobs,600);
+  _pollJobs();
+  // Confirm watchlist statuses against the server (the embed is a warm snapshot,
+  // so this is normally a no-op). Only the alert slot is repainted — rebuilding
+  // the whole overview to insert one strip re-created every chart below it.
+  wlRefresh(()=>{if(currentView()==='overview')wlPaintAlert();else if(currentView()==='watchlist')renderWatchlist(true);});
 });
 </script>
 </body>
