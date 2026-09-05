@@ -145,3 +145,85 @@ class ScreenedWithinTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# --------------------------------------------------------------------------- #
+# Closed-lot rows and the entry date
+# --------------------------------------------------------------------------- #
+# Ticking "Open Date/Time" in the Flex query is not enough on its own: the
+# attribute is then emitted on every execution row but left *empty*, because an
+# execution does not know which lot it closed. Verified against a real
+# statement — openDateTime present on 786/786 rows, populated on 0. The value
+# only appears once the Trades section also emits the **Closed Lots** level of
+# detail, and those rows repeat `openCloseIndicator="C"` and `fifoPnlRealized`,
+# so mistaking one for a trade books the same P&L twice.
+
+_EXEC = (
+    '<Trade assetCategory="STK" symbol="ADTN" openCloseIndicator="C" buySell="BUY"'
+    ' quantity="1000" tradePrice="8.428" fifoPnlRealized="256.62" ibCommission="-5.0"'
+    ' tradeDate="2026-08-05" tradeID="10003657680" ibExecID="0000d5d6.6a7332c1.01.01"'
+    ' openDateTime="{od}"/>'
+)
+
+
+def _stmt(*rows):
+    return f"<FlexQueryResponse><FlexStatements><FlexStatement><Trades>{''.join(rows)}"\
+           "</Trades></FlexStatement></FlexStatements></FlexQueryResponse>"
+
+
+@pytest.mark.unit
+class ClosedLotEntryDateTests(unittest.TestCase):
+    def test_executions_only_query_yields_no_entry_date(self):
+        """Today's shape: the column exists but IBKR leaves it blank."""
+        out = fc.parse_closing_trades(_stmt(_EXEC.format(od="")))
+        self.assertEqual(len(out), 1)
+        self.assertEqual(out[0]["entry_date"], "")
+        self.assertEqual(out[0]["exit_date"], "2026-08-05")
+
+    def test_lot_row_supplies_the_entry_date(self):
+        lot = ('<Trade levelOfDetail="CLOSED_LOT" assetCategory="STK" symbol="ADTN"'
+               ' openCloseIndicator="C" buySell="BUY" quantity="1000" tradePrice="8.428"'
+               ' fifoPnlRealized="256.62" tradeDate="2026-08-05" tradeID="10003657680"'
+               ' openDateTime="2026-07-29;09:31:00"/>')
+        out = fc.parse_closing_trades(_stmt(_EXEC.format(od=""), lot))
+        self.assertEqual(len(out), 1, "the lot row must not become a second trade")
+        self.assertEqual(out[0]["entry_date"], "2026-07-29")
+
+    def test_lot_rows_never_double_count_pnl(self):
+        """The trap: a lot row carries the same realized P&L as its execution."""
+        lot = ('<Trade levelOfDetail="CLOSED_LOT" assetCategory="STK" symbol="ADTN"'
+               ' openCloseIndicator="C" buySell="BUY" quantity="1000" tradePrice="8.428"'
+               ' fifoPnlRealized="256.62" ibCommission="-5.0" tradeDate="2026-08-05"'
+               ' tradeID="10003657680" openDateTime="2026-07-29"/>')
+        out = fc.parse_closing_trades(_stmt(_EXEC.format(od=""), lot))
+        self.assertEqual(sum(t["pnl"] for t in out), 251.62)
+
+    def test_lot_as_child_element_shape(self):
+        """Some Flex versions nest <Lot> instead of flagging levelOfDetail."""
+        xml = _stmt(_EXEC.format(od="").replace("/>",
+              '><Lot tradeID="10003657680" openDateTime="2026-07-30;10:00:00"/></Trade>'))
+        out = fc.parse_closing_trades(xml)
+        self.assertEqual(len(out), 1)
+        self.assertEqual(out[0]["entry_date"], "2026-07-30")
+
+    def test_earliest_lot_wins_when_a_close_consumes_several(self):
+        lots = "".join(
+            f'<Trade levelOfDetail="CLOSED_LOT" assetCategory="STK" symbol="ADTN"'
+            f' openCloseIndicator="C" buySell="BUY" quantity="500" tradePrice="8.4"'
+            f' fifoPnlRealized="120" tradeDate="2026-08-05" tradeID="10003657680"'
+            f' openDateTime="{d}"/>' for d in ("2026-08-01", "2026-07-21", "2026-07-28"))
+        out = fc.parse_closing_trades(_stmt(_EXEC.format(od=""), lots))
+        self.assertEqual(len(out), 1)
+        self.assertEqual(out[0]["entry_date"], "2026-07-21")
+
+    def test_populated_execution_field_is_still_preferred(self):
+        """If IBKR ever fills it in directly, no lot lookup is needed."""
+        out = fc.parse_closing_trades(_stmt(_EXEC.format(od="2026-07-15;09:30:00")))
+        self.assertEqual(out[0]["entry_date"], "2026-07-15")
+
+    def test_lot_row_alone_produces_no_trade(self):
+        lot = ('<Trade levelOfDetail="CLOSED_LOT" assetCategory="STK" symbol="ADTN"'
+               ' openCloseIndicator="C" buySell="BUY" quantity="1000" tradePrice="8.4"'
+               ' fifoPnlRealized="256.62" tradeDate="2026-08-05" tradeID="X"'
+               ' openDateTime="2026-07-29"/>')
+        self.assertEqual(fc.parse_closing_trades(_stmt(lot)), [])

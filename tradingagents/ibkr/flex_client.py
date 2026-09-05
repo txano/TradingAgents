@@ -191,16 +191,58 @@ def _parse_flex_date(raw: str) -> str:
     return ""
 
 
+_LOT_DETAIL = {"CLOSED_LOT", "CLOSEDLOT", "LOT"}
+
+
+def _is_lot_row(el) -> bool:
+    """A closed-lot record rather than an execution.
+
+    Only lot rows carry `openDateTime` — an execution cannot know which lot it
+    closed, which is why the field comes back empty on an executions-only query.
+    """
+    if el.tag in ("Lot", "ClosedLot"):
+        return True
+    return (el.get("levelOfDetail") or "").strip().upper() in _LOT_DETAIL
+
+
+def _lot_open_dates(root) -> dict[str, str]:
+    """execution id -> earliest lot open date, from closed-lot rows.
+
+    A single close can consume several lots; the earliest open is the entry that
+    matters for holding period, so it wins.
+    """
+    out: dict[str, str] = {}
+    for el in root.iter():
+        if not _is_lot_row(el):
+            continue
+        opened = _parse_flex_date(el.get("openDateTime") or el.get("holdingPeriodDateTime", ""))
+        if not opened:
+            continue
+        for key in (el.get("tradeID"), el.get("ibExecID"), el.get("execID")):
+            if key and (key not in out or opened < out[key]):
+                out[key] = opened
+    return out
+
+
 def parse_closing_trades(xml_str: str) -> list[dict]:
     """Parse Flex XML and return one dict per closing stock execution.
 
     Each dict has the fields needed to merge into trades.json.
     Opening trades are skipped — P&L is only available on close.
+
+    If the Flex query includes the **Closed Lots** level of detail, those rows
+    supply the entry date the execution rows lack. They contribute *dates only*:
+    a lot row repeats `openCloseIndicator="C"` and `fifoPnlRealized`, so treating
+    one as a trade would book the same P&L twice.
     """
     root = ET.fromstring(xml_str)
     trades = []
+    lot_opens = _lot_open_dates(root)
 
     for trade in root.iter("Trade"):
+        if _is_lot_row(trade):
+            continue                      # dates only — see docstring
+
         # IBKR labels this "Asset Class" in the portal; XML attribute varies by version
         asset_cat = trade.get("assetCategory") or trade.get("assetClass", "")
         if asset_cat != "STK":
@@ -231,11 +273,18 @@ def parse_closing_trades(xml_str: str) -> list[dict]:
         # Exit (close) date — "YYYY-MM-DD;HHMMSS" or "YYYYMMDD" in IBKR Flex.
         exit_date = _parse_flex_date(trade.get("tradeDate") or trade.get("dateTime", ""))
 
-        # Entry (open) date of the closed lot — present when the Flex query
-        # includes the "Open Date/Time" or "Holding Period Date/Time" field.
+        # Entry (open) date of the closed lot. Ticking "Open Date/Time" in the
+        # query is not enough on its own — the attribute then exists but comes
+        # back empty on execution rows. It is populated only on closed-lot rows,
+        # so fall back to those, matched by trade/execution id.
         entry_date = _parse_flex_date(
             trade.get("openDateTime") or trade.get("holdingPeriodDateTime", "")
         )
+        if not entry_date:
+            for key in (trade.get("tradeID"), trade.get("ibExecID"), trade.get("execID")):
+                if key and key in lot_opens:
+                    entry_date = lot_opens[key]
+                    break
 
         outcome = "WIN" if net_pnl > 0 else ("LOSS" if net_pnl < 0 else "BREAK_EVEN")
 

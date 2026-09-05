@@ -59,19 +59,36 @@ _PROVIDER_KEY_ENV = {
 
 
 def gather_api_keys(provider: str) -> list[str]:
-    """Collect a provider's API keys from the environment, newest-first.
+    """Collect a provider's API keys from the environment, in numeric order.
 
-    Reads `KEY`, `KEY_2` … `KEY_8` for the provider's base env var, skipping
-    blanks and duplicates. Returns [] when the provider is unknown or unset.
+    Reads `KEY` plus every `KEY_<n>` that is set, skipping blanks and duplicates.
+    Returns [] when the provider is unknown or unset.
+
+    The suffix list used to stop at `_8`, so a .env holding 16 keys silently
+    contributed 8 — and a 16-worker screen then ran two concurrent streams per
+    key, which looks exactly like a rate limit. Scan the environment instead of
+    hard-coding a ceiling, so adding a key is all it takes to use it. Gaps are
+    tolerated: `KEY_9` counts even if `KEY_7` is missing.
     """
     import os
+    import re
+
     base_env = _PROVIDER_KEY_ENV.get((provider or "").lower(), "")
+    if not base_env:
+        return []
+    pattern = re.compile(rf"^{re.escape(base_env)}(?:_(\d+))?$")
+    found: list[tuple[int, str]] = []
+    for name, value in os.environ.items():
+        m = pattern.match(name)
+        if not m:
+            continue
+        v = (value or "").strip()
+        if v:
+            found.append((int(m.group(1) or 1), v))   # bare KEY sorts first
     keys: list[str] = []
-    if base_env:
-        for suffix in ["", "_2", "_3", "_4", "_5", "_6", "_7", "_8"]:
-            k = os.environ.get(base_env + suffix, "").strip()
-            if k and k not in keys:
-                keys.append(k)
+    for _, v in sorted(found):
+        if v not in keys:
+            keys.append(v)
     return keys
 
 
@@ -150,3 +167,36 @@ def save_report_to_disk(final_state: dict, ticker: str, save_path: Path) -> Path
     )
     (save_path / "complete_report.md").write_text(header + "\n\n".join(sections), encoding="utf-8")
     return save_path / "complete_report.md"
+
+
+def parse_brief_scores(ticker_dir: Path) -> "dict | None":
+    """Read one ticker's earnings_brief.md back into a screening result dict.
+
+    The score JSON embedded in the brief is the durable record of a screen, so
+    this is how `allocate` and `resume` rebuild a screening table from a folder
+    without re-running any LLM work. Returns None when the brief is missing or
+    carries no parseable JSON block.
+    """
+    import re as _re
+
+    brief_path = Path(ticker_dir) / "earnings_brief.md"
+    if not brief_path.exists():
+        return None
+    m = _re.search(r"```json\s*(\{.*?\})\s*```", brief_path.read_text(encoding="utf-8"), _re.DOTALL)
+    if not m:
+        return None
+    try:
+        scores = json.loads(m.group(1))
+    except json.JSONDecodeError:
+        return None
+    return {
+        "ticker":         Path(ticker_dir).name,
+        "earnings_date":  scores.get("earnings_date", "unknown"),
+        "beat_score":     int(scores.get("beat_score", 0)),
+        "guidance_score": int(scores.get("guidance_score", 0)),
+        "setup_score":    int(scores.get("setup_score", 0)),
+        "total_score":    int(scores.get("total_score", 0)),
+        "signal":         scores.get("signal", "SKIP"),
+        "confidence":     scores.get("confidence", "?"),
+        "one_liner":      scores.get("one_liner", ""),
+    }

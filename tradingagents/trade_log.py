@@ -38,6 +38,10 @@ T1_CONTEXT_FIELDS = (
     "iv_rank",                 # #3b (IBKR) — null for now
     "term_ratio",              # #3b (IBKR) — null for now
     "skew_25d",                # #3b (IBKR) — null for now
+    "runup_1w_pct",            # crowding.json — 1w pre-print return (sharpest run-up window)
+    "runup_1w_score",          # crowding.json — −2..+2 contrarian score off that run-up
+    "sector_1w_pct",           # crowding.json — sector ETF's own 1w return
+    "sector_vs_spy_1w",        # crowding.json — sector ETF 1w return minus SPY's
     "runup_1m_pct",            # crowding.json — 1m pre-print return
     "runup_vs_sector_1m",      # crowding.json — 1m return vs sector ETF
     "dist_52w_high_pct",       # crowding.json — distance below 52w high
@@ -191,6 +195,10 @@ def enrich_from_artifacts(trade: dict, reports_dir: Path = Path("reports")) -> d
     _set("implied_move_pct", _safe_float(pricing.get("implied_move_pct")))
 
     crowding = _load_json(ticker_dir / "crowding.json") or {}
+    _set("runup_1w_pct", _safe_float(crowding.get("runup_1w_pct")))
+    _set("runup_1w_score", crowding.get("runup_1w_score"))
+    _set("sector_1w_pct", _safe_float(crowding.get("sector_1w_pct")))
+    _set("sector_vs_spy_1w", _safe_float(crowding.get("sector_vs_spy_1w")))
     _set("runup_1m_pct", _safe_float(crowding.get("runup_1m_pct")))
     _set("runup_vs_sector_1m", _safe_float(crowding.get("runup_1m_vs_sector")))
     _set("dist_52w_high_pct", _safe_float(crowding.get("dist_52w_high_pct")))
@@ -207,6 +215,18 @@ def enrich_from_artifacts(trade: dict, reports_dir: Path = Path("reports")) -> d
     regime = _load_json(ticker_dir.parent / "regime.json") or {}
     if trade.get("regime_flag") is None and regime.get("risk_off") is not None:
         trade["regime_flag"] = "risk_off" if regime["risk_off"] else "normal"
+
+    # Watchlist link (#19): a trade in a name the run marked WATCH was (most
+    # plausibly) a wait-and-decide entry — tag it so calibration can track the
+    # strategy separately from straight pre-earnings entries.
+    if trade.get("strategy") is None:
+        watchlist_path = ticker_dir.parent / "watchlist.json"
+        try:
+            entries = json.loads(watchlist_path.read_text(encoding="utf-8"))
+            if any(e.get("ticker") == ticker for e in entries if isinstance(e, dict)):
+                trade["strategy"] = "wait_and_decide"
+        except Exception:
+            pass
 
     return trade
 

@@ -347,7 +347,18 @@ def import_ibkr(
         t.get("ibkr_trade_id") for t in existing_trades if t.get("ibkr_trade_id")
     }
 
-    new_trades = [t for t in ibkr_trades if t.get("ibkr_trade_id") not in existing_ids]
+    # Dedupe against the log *and* within this batch. Statement-shape changes can
+    # legitimately produce two rows for one execution (enabling the Closed Lots
+    # level of detail is the known case), and only the first is the trade.
+    new_trades = []
+    batch_ids = set()
+    for t in ibkr_trades:
+        tid = t.get("ibkr_trade_id")
+        if tid and (tid in existing_ids or tid in batch_ids):
+            continue
+        if tid:
+            batch_ids.add(tid)
+        new_trades.append(t)
     skipped = len(ibkr_trades) - len(new_trades)
 
     if skipped:
