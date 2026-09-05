@@ -129,15 +129,39 @@ MODEL_OPTIONS: ProviderModeOptions = {
         ],
     },
     "deepseek": {
+        # Verified against the live API on 2026-08-01: /models returns exactly
+        # two models, and the old V3.2 names are now thin aliases onto V4 —
+        # they no longer give you a V3.2 model at all:
+        #
+        #     request "deepseek-reasoner" -> response.model deepseek-v4-flash (thinking on)
+        #     request "deepseek-chat"     -> response.model deepseek-v4-flash (thinking off)
+        #
+        # So the only real choice is v4-flash vs v4-pro. Both are usable, but
+        # ONLY when streaming. DeepSeek holds a slow request open with bare
+        # empty lines on the non-streaming path and proper ": keep-alive" SSE
+        # comments when streaming (api-docs.deepseek.com/quick_start/rate_limit),
+        # and the empty-line path does not survive long v4-pro generations.
+        # Measured, identical prompt, no retries, 12 runs each, counting
+        # connections dropped mid-body (surfaced by the openai SDK only as the
+        # opaque "Connection error."):
+        #
+        #     v4-pro    stream=False   8/12 = 67%    v4-pro    stream=True  0/12 = 0%
+        #     v4-flash  stream=False   0/12 =  0%    v4-flash  stream=True  0/12 = 0%
+        #
+        # `openai_client.py` therefore streams DeepSeek calls by default. Using
+        # v4-pro non-streamed from 2026-07-24 is what took batch-screen error
+        # rates from ~0% to 72-100% per run. Note also that the Responses API
+        # does not support v4-pro until early Aug 2026 — we use Chat Completions
+        # for DeepSeek, so that limit does not apply here, but it is the same
+        # incomplete-rollout story.
         "quick": [
-            ("DeepSeek V4 Flash - Latest V4 fast model", "deepseek-v4-flash"),
-            ("DeepSeek V3.2", "deepseek-chat"),
+            ("DeepSeek V4 Flash - fast, thinking", "deepseek-v4-flash"),
+            ("DeepSeek V4 Flash, no thinking (alias 'deepseek-chat')", "deepseek-chat"),
             ("Custom model ID", "custom"),
         ],
         "deep": [
-            ("DeepSeek V4 Pro - Latest V4 flagship model", "deepseek-v4-pro"),
-            ("DeepSeek V3.2 (thinking)", "deepseek-reasoner"),
-            ("DeepSeek V3.2", "deepseek-chat"),
+            ("DeepSeek V4 Pro - flagship (needs streaming)", "deepseek-v4-pro"),
+            ("DeepSeek V4 Flash - cheaper, 3x less per token", "deepseek-v4-flash"),
             ("Custom model ID", "custom"),
         ],
     },

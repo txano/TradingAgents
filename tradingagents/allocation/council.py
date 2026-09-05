@@ -347,7 +347,14 @@ Earnings Brief:
 """
 
 
-def _format_sections(contexts: list[dict]) -> str:
+# Above this many tickers the synthesis prompt drops the per-ticker PM decision
+# and brief bodies (the advisors have already digested them and their
+# perspectives are in the prompt) — keeps very large batches inside model
+# context and avoids multi-hundred-KB requests.
+CONDENSED_SECTIONS_THRESHOLD = 25
+
+
+def _format_sections(contexts: list[dict], include_reports: bool = True) -> str:
     parts = []
     for ctx in contexts:
         avg = ctx.get("historical_avg_total")
@@ -384,16 +391,87 @@ def _format_sections(contexts: list[dict]) -> str:
                 signal=ctx.get("signal", "?"),
                 confidence=ctx.get("confidence", "?"),
                 one_liner=ctx.get("one_liner", ""),
-                pm_decision=ctx.get("pm_decision", "Not available"),
-                brief_summary=ctx.get("brief_summary", "Not available"),
+                pm_decision=(
+                    ctx.get("pm_decision", "Not available") if include_reports
+                    else "[omitted in large batch — see the advisor perspectives]"
+                ),
+                brief_summary=(
+                    ctx.get("brief_summary", "Not available") if include_reports
+                    else "[omitted in large batch — see the advisor perspectives]"
+                ),
             )
         )
     return "\n".join(parts)
 
 
-def _call(llm, system: str, human: str) -> str:
-    """Single LLM call, returns content string."""
-    return llm.invoke([("system", system), ("human", human)]).content
+logger = logging.getLogger(__name__)
+
+# Council calls can be very large (40+ ticker sections + 10 advisor outputs into
+# the synthesis) and slow on reasoning models — transient connection drops and
+# read timeouts must not kill a run after 10 successful LLM calls.
+_CALL_ATTEMPTS = 3
+_RETRY_BACKOFF_S = 10.0
+_NON_RETRYABLE = ("BadRequest", "Authentication", "PermissionDenied", "NotFound", "InvalidRequest")
+
+
+def _chunk_text(content) -> str:
+    """Text of a streamed chunk; handles providers that stream typed blocks."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "".join(
+            b.get("text", "") if isinstance(b, dict) else str(b) for b in content
+        )
+    return ""
+
+
+def _call_once(llm, messages) -> str:
+    # Stream and join: on long reasoning-model calls a non-streaming request
+    # sits silent until completion and gets dropped by read timeouts / network
+    # gear ("Connection error."). Streaming keeps bytes flowing the whole time.
+    try:
+        text = "".join(_chunk_text(c.content) for c in llm.stream(messages))
+    except (AttributeError, NotImplementedError, TypeError):
+        text = ""
+    if text.strip():
+        return text
+    return llm.invoke(messages).content
+
+
+def _call(llm, system: str, human: str, progress_cb=None, label: str = "LLM call") -> str:
+    """Single LLM call with streaming + retry on transient failures."""
+    messages = [("system", system), ("human", human)]
+    last_exc = None
+    for attempt in range(_CALL_ATTEMPTS):
+        try:
+            return _call_once(llm, messages)
+        except Exception as exc:
+            name = type(exc).__name__
+            if any(tag in name for tag in _NON_RETRYABLE):
+                raise
+            last_exc = exc
+            detail = describe_exc(exc)
+            if attempt < _CALL_ATTEMPTS - 1:
+                delay = _RETRY_BACKOFF_S * (2 ** attempt)
+                logger.warning(
+                    "%s failed (%s); retry %d/%d in %.0fs",
+                    label, detail, attempt + 1, _CALL_ATTEMPTS - 1, delay,
+                )
+                if progress_cb:
+                    progress_cb(
+                        f"  {label} failed ({detail}); retry {attempt + 1}/{_CALL_ATTEMPTS - 1} in {delay:.0f}s..."
+                    )
+                time.sleep(delay)
+    # Re-raise the original exception (preserving its type for callers'
+    # isinstance/name checks) but fold the resolved cause into its message,
+    # since callers surface str(exc) as the terminal "FATAL: ..." line and
+    # providers like DeepSeek collapse every network failure to "Connection
+    # error." otherwise.
+    try:
+        last_exc.args = (f"{label} failed after {_CALL_ATTEMPTS} attempts: {describe_exc(last_exc)}",)
+    except Exception:
+        pass
+    raise last_exc
 
 
 # ── Council runner ─────────────────────────────────────────────────────────────
@@ -458,7 +536,10 @@ def run_council(
             trade_date=trade_date,
             ticker_sections=ticker_sections,
         )
-        return advisor["label"], _call(llm_by_label[advisor["label"]], advisor["system"], human)
+        return advisor["label"], _call(
+            llm_by_label[advisor["label"]], advisor["system"], human,
+            progress_cb=_log, label=f"Advisor {advisor['label']}",
+        )
 
     names_by_label = {a["label"]: a["name"] for a in _ADVISORS}
 
@@ -502,7 +583,10 @@ def run_council(
         human = _REVIEW_HUMAN.format(
             n=len(active_labels), perspectives=perspectives_block
         )
-        return advisor["label"], _call(llm_by_label[advisor["label"]], system, human)
+        return advisor["label"], _call(
+            llm_by_label[advisor["label"]], system, human,
+            progress_cb=_log, label=f"Review {advisor['label']}",
+        )
 
     with ThreadPoolExecutor(max_workers=5) as pool:
         futures = {pool.submit(_run_review, a): a["label"] for a in active_advisors}
@@ -569,7 +653,7 @@ def run_council(
             violations="\n".join(f"- {v}" for v in violations),
         )
         try:
-            corrected = _call(llm, synthesis_system, correction_human)
+            corrected = _call(llm, synthesis_system, correction_human, progress_cb=_log, label="Corrective pass")
             corrected_violations = validate_allocation(
                 parse_allocation(corrected), budget, ticker_contexts,
                 short_threshold=short_thresh, regime=regime,
