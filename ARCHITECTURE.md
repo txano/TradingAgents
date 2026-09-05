@@ -53,10 +53,13 @@ AllocationLayer
   └── fundamentals_scorer.py  metrics-grounded LLM fundamentals quality score
   └── pricing.py              spot / valuation / options-implied earnings move
   └── asymmetry.py            payoff asymmetry from historical prints (E[move|beat/miss], fade rate, coverage, EV)
-  └── crowding.py             run-up vs sector ETF, 52w-high distance, EPS-revision momentum (#14c)
+  └── crowding.py             run-up (1w/1m/3m) + sector flow, 52w-high distance, EPS-revision momentum (#14c)
   └── insider.py              cluster-buy / sell→buy-reversal detection from insider tape (#18)
   └── regime.py               tactical regime gates (#15b): SPX-vs-50dma / VIX risk-off,
                               FOMC/CPI collision calendar, sizing multiplier
+  └── watchlist.py            wait-and-decide entries (#19): WATCH rows → watchlist.json,
+                              status lifecycle (PENDING/ARMED/TRIGGERED/EXPIRED),
+                              live quotes + purchased/dismissed user overlay
   └── common.py               shared helpers (cut, parse_allocation)
 
 LearningLayer (tradingagents/learning/)
@@ -81,7 +84,7 @@ Output per ticker (saved to `reports/earnings/{screening,earnings}_YYYY-MM-DD_TI
 | `fundamentals_score.json` | Fundamentals quality score + computed statement metrics |
 | `pricing.json` | Spot, market cap, fwd P/E, 52w position, implied earnings move |
 | `asymmetry.json` | Historical E[move\|beat], E[move\|miss], fade rate, coverage ratio, EV of a long |
-| `crowding.json` | Run-up (1m/3m, vs sector ETF), distance from 52w high, EPS-revision momentum |
+| `crowding.json` | Run-up (1w/1m/3m, vs sector ETF), 1w sector flow, distance from 52w high, EPS-revision momentum |
 | `insider.json` | Insider signal (#18): cluster buys, sell→buy reversals, net buy/sell values, routine-selling flag |
 | `peers.json` | Peer earnings read-through (#9): peers reported in last ~35d, EPS surprise + day-1 reaction, `sector_bar_elevated` (beat-and-still-fall) flag |
 | `complete_report.md` | Full LangGraph multi-agent report |
@@ -94,6 +97,7 @@ Output per screening run (saved to `reports/earnings/{screening,earnings}_YYYY-M
 | `screening_table.md` | Ranked table of all tickers with scores |
 | `allocation.md` | AI Council allocation report |
 | `regime.json` | Market regime at allocation time (#15b): SPX vs 50-dma, VIX, risk_off flag |
+| `watchlist.json` | WATCH entries (#19): trigger price, reserved amount, watch window |
 | `calibration.json` | Post-earnings accuracy measurement (written by `calibrate`) |
 | `calibration.md` | Human-readable calibration report |
 
@@ -193,6 +197,25 @@ Validation (deterministic, allocation/validator.py):
 ```
 
 Robustness behavior:
+- Every council LLM call **streams** its response (non-streaming requests on
+  long reasoning-model calls sit silent until completion and get dropped by
+  read timeouts as "Connection error"), falling back to a plain invoke when a
+  provider can't stream. Transient failures (connection/timeout/5xx) retry up
+  to 3 attempts with exponential backoff; 4xx-style errors fail fast. Retries
+  (and the final failure) are logged with the real underlying cause (e.g. a
+  chained `ReadTimeout`/`RemoteProtocolError`), not just the generic
+  "Connection error." string that providers like DeepSeek collapse everything
+  to, and surface on the job's progress log, not just the Python logger.
+- Batches above ~25 tickers use **condensed ticker sections for the synthesis
+  prompt** (per-ticker PM decision + brief bodies omitted — the advisor
+  perspectives in the same prompt already digest them), keeping 40+-ticker
+  requests inside model context. Advisors always get the full sections.
+- The DeepSeek client's default request timeout is 1800s (reasoning models on
+  large council prompts — e.g. a 90+-ticker synthesis — legitimately run for
+  many minutes; this was raised from 600s after a 99-ticker run still hit
+  read-timeout "Connection error"s at that ceiling), and its default
+  `max_retries` is 5 rather than the SDK's 2 (see "DeepSeek dropped
+  connections" below).
 - Advisors that error out are dropped entirely (never stubbed into prompts); the
   council aborts if fewer than 2 respond.
 - Advisors can run on different models via `config["council_advisor_models"]`
@@ -211,6 +234,37 @@ Sizing rules enforced in the synthesis prompt AND re-checked by the validator:
 - Implied earnings move is treated as the market's priced-in expectation: size
   down when the move is expensive relative to conviction
 
+Wait-and-decide WATCH outcome (#19, in `watchlist.py` + `validator.py` + synthesis prompt):
+- The council may mark a **quality** name (`fundamentals_score ≥ +2`) WATCH instead
+  of BUY/SKIP when the pre-print entry is unattractive (EV n/a with high fade/low
+  coverage, crowding, Low/Medium confidence): $0 allocated now, a `watch_amount`
+  reserved from cash, and a `trigger_price` ≥ 0.5 × the implied move below spot.
+  If the stock trades at/below the trigger within `watch_expiry_sessions` (2–5)
+  after the print, it is a buy-the-dip candidate with the same thesis.
+- Validator checks WATCH rows structurally (zero amount, positive trigger/reserve,
+  quality gate, trigger depth, Σ reservations ≤ cash); WATCH rows are exempt from
+  the 6-position cap. Entries persist as `watchlist.json` at the run root; the
+  dashboard tracks the PENDING → ARMED → TRIGGERED → EXPIRED lifecycle
+  (hit = any session low ≤ trigger inside the window). Flag-only: orders are
+  placed manually. Trades in WATCH-listed names get `strategy: "wait_and_decide"`.
+- **Live quote (`fetch_live_price`):** the dashboard's `Now` column is the last
+  traded price (yfinance `fast_info`, 1-day close fallback), TTL-cached 60s
+  because the view polls; `price_source` tells the UI whether it got `live` or
+  the daily `close`. Trigger *detection* still keys off daily bars — an intraday
+  low is what proves a level traded — but an ARMED entry quoting at/below its
+  trigger is upgraded to TRIGGERED immediately rather than waiting for the bar
+  to settle. Every fetch is guarded; no quote just degrades to the close.
+- **User overlay (`purchased` / `dismissed`):** because execution is manual, the
+  dashboard needs to record what the user did. `set_entry_state()` writes
+  `reports/watchlist_state.json` — keyed `"<run_id>|<TICKER>"`, holding state,
+  UTC timestamp, and the quote at purchase time — and `collect_watchlists()`
+  merges it onto every entry as `user_state`/`user_state_at`/`user_price`. It
+  lives in `reports/` (not the run dir) so run artifacts stay exactly as the
+  council produced them, the overlay survives re-runs, and Syncthing carries it
+  Mac ↔ Pi alongside `trades.json`. Purchased/dismissed rows drop out of the nav
+  badge and the Overview alert; dismissed ones also skip the price fetch. Both
+  are reversible (`state=None`), so nothing is destroyed.
+
 Implied-move sizing cap & regime gates (#15, in `regime.py` + `validator.py` + synthesis prompt):
 - **Implied-move loss cap (#15a, hard):** a position's plausible one-day loss
   (`amount × implied_move`) may not exceed 1% of budget (`IMPLIED_MOVE_LOSS_CAP`) —
@@ -223,6 +277,18 @@ Implied-move sizing cap & regime gates (#15, in `regime.py` + `validator.py` + s
   ticker's print (static calendars in `regime.py`, per-ticker `Macro:` line)
   halves it again. `regime.sizing_multiplier` is the single source for the
   multiplier, used by both the prompt and the validator.
+
+**1-week run-up & sector flow (#14c, added 2026-08-30).** `crowding.py` also records
+`runup_1w_pct` (the name's move over the 5 sessions into the print), a −2..+2
+contrarian `runup_1w_score` off it, and the sector's own week (`sector_1w_pct`,
+`sector_vs_spy_1w`, using the existing `SECTOR_ETF` map). Measured over 1,128 screened
+prints (Jul–Aug 2026) the 1-week window is the sharpest predictor available:
+`corr(runup_1w, day+10) = −0.157`, against +0.009 / −0.004 / −0.053 for the beat /
+guidance / setup scores. It is **displayed, not scored into `weighted_score`** — it
+shows on the council's `Crowding:` line, raises a flag above +5%, and lands in
+`crowding.json` and the trade log for #17 analysis. Folding it into the weighted total
+is a deliberate decision left open; the bands come from one earnings season.
+`RUNUP_1W_BANDS` is the single place to recalibrate.
 
 Payoff-asymmetry & crowding gates (#14, in `validator.py` + synthesis prompt):
 - **Hard EV gate (#14b):** a BUY whose computable expectancy is clearly negative
@@ -278,7 +344,7 @@ After earnings are announced, `tradingagents calibrate` measures prediction accu
 
 ---
 
-## 6. Trade log (`~/.tradingagents/trades.json`)
+## 6. Trade log (`reports/trades.json`)
 
 Each entry is one closed trade. Fields:
 
@@ -319,7 +385,7 @@ existing values or raises.
 | Group | Fields | Source |
 |-------|--------|--------|
 | T-1 context | `implied_move_pct` | `pricing.json` |
-| | `runup_1m_pct`, `runup_vs_sector_1m`, `dist_52w_high_pct`, `revision_direction_30d` | `crowding.json` |
+| | `runup_1w_pct`, `runup_1w_score`, `sector_1w_pct`, `sector_vs_spy_1w`, `runup_1m_pct`, `runup_vs_sector_1m`, `dist_52w_high_pct`, `revision_direction_30d` | `crowding.json` |
 | | `short_interest_pct` | yfinance `info.shortPercentOfFloat` |
 | | `iv_rank`, `term_ratio`, `skew_25d` | **null** — owned by #3b (IBKR options) |
 | | `regime_flag` | run-root `regime.json` (#15) — "risk_off" / "normal" |
@@ -370,7 +436,7 @@ reports/
 │           ├── fundamentals_score.json ← fundamentals quality score + metrics
 │           ├── pricing.json            ← spot / valuation / implied earnings move
 │           ├── asymmetry.json          ← historical payoff asymmetry + EV
-│           ├── crowding.json           ← run-up / 52w-high / revision momentum
+│           ├── crowding.json           ← run-up (1w/1m/3m) / sector flow / 52w-high / revision momentum
 │           ├── insider.json            ← cluster buys / sell→buy reversals (#18)
 │           ├── peers.json              ← peer earnings read-through (#9)
 │           ├── complete_report.md
@@ -379,6 +445,10 @@ reports/
 └── reflections/
     └── TICKER_YYYYMMDD_HHMMSS/     ← post-trade reflection outputs
 ```
+
+Individual `analysis/` runs are surfaced on the dashboard's **Analyses** view
+alongside every screened ticker (see §12), so a one-off `analyze` isn't stranded
+in a folder no page links to.
 
 ---
 
@@ -390,6 +460,7 @@ reports/
 | `screen` | Run EarningsLayer + pipeline on a batch of tickers, then allocate |
 | `earnings-calendar` | Fetch upcoming earnings and feed them into a screen |
 | `allocate` | Rebuild screening_table + re-run AI Council on an existing screening dir |
+| `resume` | Finish an interrupted run: screen only the missing tickers into the same folder, rebuild the table, allocate (`--dir`, `--workers`, `--no-allocate`, `-y`) |
 | `reflect` | Post-trade reflection for a completed trade (interactive, pick trades) |
 | `learn` | Reflect on ALL trades, analyse them, and auto-apply weight + prompt improvements (non-interactive) |
 | `improve` | LLM analysis of past reflections → report only (interactive) |
@@ -497,7 +568,7 @@ To compute which bucket drove profitable trades:
 import json
 from pathlib import Path
 
-trades = json.loads(Path.home().joinpath(".tradingagents/trades.json").read_text())
+trades = json.loads(Path("reports/trades.json").read_text())   # see _trades_path()
 
 # Trades where we made money AND beat prediction was correct
 beat_useful = [t for t in trades if t.get("beat_prediction_correct") and t.get("pnl", 0) > 0]
@@ -527,7 +598,9 @@ add a `suggest_weights(calibration_rows, trade_entries)` function there.
 
 | What | Path |
 |------|------|
-| Trade log | `~/.tradingagents/trades.json` |
+| Trade log | `reports/trades.json` (legacy `~/.tradingagents/trades.json` is a stale pre-migration copy) |
+| Watchlist user state (#19) | `reports/watchlist_state.json` (purchased / dismissed marks) |
+| Job registry | `reports/jobs.json` (durable job list behind the activity banner) |
 | Allocation weights | `~/.tradingagents/allocation_weights.json` |
 | Lessons cache | `~/.tradingagents/lessons_cache.md` (+ `lessons_cache_meta.json`) |
 | Cache | `~/.tradingagents/cache/` |
@@ -542,11 +615,395 @@ add a `suggest_weights(calibration_rows, trade_entries)` function there.
 | Crowding / run-up gate | `tradingagents/allocation/crowding.py` |
 | Insider signal | `tradingagents/allocation/insider.py` |
 | Regime gates / macro calendar | `tradingagents/allocation/regime.py` |
+| Wait-and-decide watchlist | `tradingagents/allocation/watchlist.py` |
+| Resume an interrupted run | `cli/commands/resume.py` |
+| Job registry | `cli/jobs_registry.py` |
 | Lessons library | `tradingagents/learning/lessons.py` |
 | Batch reflection | `tradingagents/learning/trade_reflections.py` |
 | Self-improvement engine | `tradingagents/learning/self_improve.py` (weight + guarded prompt-edit auto-apply) |
 | Calibration logic | `tradingagents/calibration/calibrator.py` |
 | IBKR import | `tradingagents/ibkr/flex_client.py` |
 | CLI entry point | `cli/main.py` (subcommands in `cli/commands/`) |
-| Dashboard HTML | `cli/static/dashboard.html` |
+| Dashboard SPA (served by `cli/server.py`) | `cli/static/reports_site.html` |
+| Legacy dashboard HTML | `cli/static/dashboard.html` |
 | Default LLM config | `tradingagents/default_config.py` |
+
+---
+
+## 12. DeepSeek dropped connections ("Connection error.")
+
+Every transport-layer fault reaches the app as the same opaque string, because
+the openai SDK's request loop ends in `except Exception as err: raise
+APIConnectionError(request=request) from err`. A DNS failure, a TLS reset, a
+read timeout and a mid-response disconnect are indistinguishable from the
+message alone — the real fault is only in the chained `__cause__`.
+`tradingagents/llm_clients/errors.py::describe_exc` walks that chain and is what
+`screen_ticker` and the council use instead of `str(exc)`; `screen_ticker` also
+`logger.exception`s the full traceback before collapsing to a one-liner.
+
+The fault actually seen on batch screens is:
+
+```
+openai.APIConnectionError: Connection error.
+ <= httpx.RemoteProtocolError: peer closed connection without sending
+    complete message body (incomplete chunked read)
+```
+
+DeepSeek begins streaming a chunked response and then drops the connection
+before finishing. It is **not** a timeout (a read timeout raises
+`APITimeoutError: Request timed out.` instead), and **not** a concurrency
+problem — it reproduces on a single ticker with no parallelism.
+
+**It is one model, and only when not streaming.** DeepSeek holds a slow request
+open by sending bare empty lines on the non-streaming path, but proper
+`: keep-alive` SSE comments when streaming
+([rate-limit docs](https://api-docs.deepseek.com/quick_start/rate_limit)). The
+empty-line path does not survive long `v4-pro` generations. Controlled A/B
+(2026-08-01), identical prompt, fresh client, `max_retries=0`, 12 runs each:
+
+| model | `stream=False` | `stream=True` |
+|---|---|---|
+| `deepseek-v4-pro` | **8/12 = 67%** (avg 65s) | **0/12** (avg 78s) |
+| `deepseek-v4-flash` | 0/12 (avg 33.5s) | 0/12 (avg 33.6s) |
+
+Short requests never trigger it, which is why a trivial probe of `v4-pro`
+passes; only sustained generation shows it. This is also exactly why the council
+(which streams every call) kept working while the agent pipeline (plain
+`invoke`) did not.
+
+**There is no V3.2 option any more.** Verified against the live API on
+2026-08-01: `/models` returns only `deepseek-v4-flash` and `deepseek-v4-pro`,
+and the old names are thin aliases onto V4 — `deepseek-reasoner` →
+`deepseek-v4-flash` with thinking on, `deepseek-chat` → `deepseek-v4-flash` with
+thinking off. Any earlier note recommending "V3.2 for stability" was really
+just selecting `v4-flash`.
+
+That explains the fleet-level numbers: screening error rates (share of ticker
+rows scored `-99`) were ~0% through 2026-07-23, then 72–100% per run from
+2026-07-24, when `v4-pro` became the deep model. It also explains the observed
+whole-run rate — deep-model calls are roughly one call in seven, and
+`0.14 × 0.875 ≈ 12%` matches the 12.4% per-call drop rate measured across an
+instrumented screen (40 drops / 323 calls).
+
+**Why some tickers finish and others don't**: it is a per-call dice roll and a
+depth-3 ticker makes ~80 calls in a row, any one of which kills it. Survival is
+`(1 - q)^80` for unrecovered-drop rate `q` — 1.7% → 25% of tickers survive
+(matches the 78% error rate observed with the old 2 retries), 0.31% → 78%
+(matches 5-of-6 with `max_retries=5`). Nothing about the ticker matters.
+
+Mitigations, in order of effectiveness:
+1. **DeepSeek calls stream by default** (`llm_kwargs.setdefault("streaming",
+   True)` in `openai_client.py`). This is the actual fix — it takes `v4-pro`
+   from 67% drops to 0% and costs `v4-flash` nothing (33.5s vs 33.6s). Verified
+   to preserve tool calls and `with_structured_output`. Set `streaming=False`
+   in config to opt out.
+2. `DEEPSEEK_MAX_RETRIES = 5` (up from the SDK's 2). Defence in depth for
+   whatever still slips through; drops are probabilistic, so retrying the single
+   failed call is far cheaper than losing a whole ticker's multi-agent run.
+   Measured on 8 tickers with non-streamed `v4-pro`: 78% → 17% error rate.
+3. Model choice is now a cost/quality decision rather than a reliability one:
+   `v4-pro` is ~3x the token price of `v4-flash` ($0.435/$0.87 vs $0.14/$0.28
+   per 1M in/out). Both are 1M context, 384K max output.
+
+---
+
+## 13. Dashboard views (`cli/static/reports_site.html`)
+
+Single-page app, one section per view, routed by URL path when served by
+`cli/server.py` (`/screenings`, `/analyses`, …) and by `#hash` when the built
+static file is opened over `file://`. Adding a view means updating four places:
+the `VIEWS` array, the sidebar `ni-<view>` nav item, the `v-<view>` section, and
+the `render()` dispatch — plus the clean-path route list in `cli/server.py`.
+
+**Screenings** — earnings calendar + one accordion per screening run. Inside a
+calendar day card, the screenings listed against a ticker are limited to those
+run in the `SCREENING_WINDOW_DAYS` (30) before that print: an Aug 3 print shows
+only screenings done since Jul 3. Recency is the rule, deliberately *not* the
+run's own `earnings_date` label — a batch is tagged with the date it targeted,
+but a ticker inside it can report a few days later (WHR sits in the Jul 27 batch
+yet prints Aug 3), and that screening is the relevant one. Runs dated after the
+print are kept only when explicitly tagged for it, so a later cycle can't bleed
+backwards. Without this, every screening ever run against a quarterly reporter
+showed up on every day card, and the 25 runs carrying no `earnings_date` leaked
+into all of them. The `×N` history badge and its modal use the same window, with
+a **Show all** escape hatch that drops back to the unfiltered history.
+
+**Analyses** — every ticker-level analysis in one browsable, searchable place:
+the per-ticker work from each screening run plus standalone `analyze` runs
+(`reports/analysis/`), which are otherwise only reachable by expanding the run
+that produced them. Filter by ticker / source / signal; paginated in pages of
+150 since the list runs to a few thousand rows. Standalone entries get their
+`signal`/`confidence`/`total_score`/`one_liner` parsed server-side in
+`_build_reports_data` so they sort and filter alongside screened ones; an
+`analysis`-type report with no score JSON block simply shows "—".
+
+**Watchlist** — open WATCH entries sorted TRIGGERED → ARMED → PENDING, with
+Purchased / Expired / Dismissed folded away below. `Now` is a live quote (green
+dot; a grey dot means it fell back to the daily close) and re-polls every 60s
+while the view is open. Each row carries **✓ Purchased** and **✕ Delete**, both
+POSTing to `/api/watchlist/action` and both undoable from the folded section
+they move into — the buttons record what the user did about an entry, they do
+not place or cancel anything. They are hidden in the static `build-web` output,
+where there is no server to write the state file.
+
+**Screenings — earnings calendar.** Day cards render **headers only**; the table
+for a day is built the first time it is expanded (`calDayBodyHtml`, cached via
+`data-built`). Rendering all five days eagerly produced ~683 KB of HTML and 546
+checkboxes, every one inside a `display:none` container — the single slowest
+thing on the page after the payload itself. A **market-cap filter** (min/max,
+`Micro/Small/Mid/Large` presets, and an "include unknown cap" toggle) narrows
+which companies appear; it persists in `localStorage`, the day header reports
+"31 of 168 companies", and `calDayTickers()` makes "Screen Selected ▶" honour it
+whether the day is open (checkbox selection) or collapsed (everything matching
+the filter). Inputs take bare numbers as millions, or a K/M/B/T suffix.
+
+**Run** — job launchers (screen / analyze / calibrate / reflect / improve /
+allocate), plus a **Resume** card listing runs that are missing tickers or an
+allocation. Each row shows `screened/total`, the missing count, and whether the
+universe came from the earnings calendar or only from the run's own folders;
+the button starts a `resume` job and streams its log over the same websocket as
+every other job. A red sidebar badge on **Run** counts jobs the registry has
+found dead (see §14).
+
+**Performance — portfolio returns.** TWR and MWR both divide by a **capital
+base**, not by Σ of every position's notional. The distinction is the account's
+*turnover*, and getting it wrong is not a rounding error: $15.7M of notional
+traded on a ~$840k book reported **+0.99%** for a period that returned ~**+18%**.
+
+Entry dates are not in the trade log — IBKR's Flex closing record omits the open
+date, so `trade_date` is null on every imported fill — which rules out a true IRR
+or a time-integrated average exposure. What survives without them: *trades that
+exit on the same day were provably open on that day*, so the largest same-day
+exit notional is a hard lower bound on capital at work. `dashCapitalBase()`
+returns it. Being a lower bound, it can understate the return but never inflate
+it — the safe direction for a number you might act on.
+
+* `MWR = Σ P&L ÷ capital base`
+* `TWR = Π(1 + daily P&L ÷ capital base) − 1`, chain-linked over exit **days**.
+  Chaining one HPR per *trade* instead treats concurrent positions as if each
+  reinvested the previous one's proceeds; across 1,322 overlapping trades
+  (median 15 exits/day) that compounded a +18% account into a reported
+  **+1,580%** cumulative and **+1,515,750%** annualized.
+
+Annualization is `(1+r)^(365/days) − 1`, guarded for `r ≤ −1` so a wiped-out
+period renders `—` instead of `NaN`, and skipped under 7 days.
+
+Both dashboards carry their own copy (`reports_site.html`, the legacy
+`dashboard.html`), so `tests/test_portfolio_returns.py` runs the real functions
+out of the HTML under node and asserts the two agree. If entry dates ever land
+in the log, replace the bound with true average capital employed
+(`Σ notional×days ÷ period`) — the call sites already take a single `base`.
+
+---
+
+## 14. Long-running jobs: registry, banner, resume
+
+Dashboard jobs execute *inside* the uvicorn process (`_run_screen` and friends in
+`cli/server.py`). That has one sharp edge: the server holds `cli/` and
+`tradingagents/` in memory from process start, so picking up a code change means
+a restart — and the restart kills every in-flight job. On 2026-08-10 that ended a
+149-ticker screen at ticker 54, silently, with the UI still claiming nothing was
+running.
+
+Three pieces close that hole.
+
+**`cli/jobs_registry.py` — durable job list.** Every job is mirrored to
+`reports/jobs.json` (next to `trades.json`, so Syncthing carries it) with its
+PID, run folder and ticker total. Two properties make it honest rather than
+merely persistent:
+
+* *Liveness is derived, not trusted.* A stored "running" is checked by signalling
+  the PID at read time; a job whose process is gone reads back as `interrupted`.
+* *Progress is recomputed, not reported.* For a run-folder job, "done" is a count
+  of `earnings_brief.md` files on disk — so a job that never calls back, or one
+  started by a script that predates the registry, still shows real progress.
+
+Records are advisory: losing the file loses visibility, never work. Writes are
+atomic (`os.replace`) and finished records are pruned after 7 days.
+
+**`/api/jobs` — merged view.** Returns this process's in-memory jobs *plus*
+registry records it has never heard of, so the activity banner reflects
+everything running on the machine: a detached CLI run, or a job that outlived a
+previous server. External records are flagged `external: true`; the banner's log
+modal shows their run folder and log path instead of trying to open a websocket
+that does not exist here.
+
+**`cli/commands/resume.py` — finishing an interrupted run.** `plan_resume()`
+works out what is left: the intended universe comes from the earnings-calendar
+entry the run was launched for (tickers are screened in calendar order, so the
+finished set is a prefix of it), falling back to "folders started but empty" for
+runs with no calendar backing. `resume_run()` then screens exactly the missing
+tickers *into the same folder* through the shared `screen_ticker()`, rebuilds
+`screening_table.md` from every brief, and re-runs allocation. Folders that were
+started but produced nothing are retried first, since they are the earliest gaps.
+`tradingagents resume` and the `resume` job type both call it, so CLI and
+endpoint cannot drift.
+
+**Stopping a job (`POST /api/jobs/{id}/stop`).** The banner's **■ Stop** button
+ends a job that has wedged or is no longer wanted. The implementation is shaped
+entirely by one fact: *a dashboard job is a thread in the server process, so its
+recorded PID is the server's own.* Signalling that PID kills the dashboard along
+with the job. So the endpoint branches on where the work actually lives:
+
+| Where | What Stop does |
+|---|---|
+| This process (the usual case) | Cooperative cancel — no signal is ever sent |
+| Another live process (detached CLI run) | `SIGTERM`, or `SIGKILL` with `force=true` |
+| A process that is already gone | Persists the terminal status so the record stops claiming to run |
+
+Cooperative cancel means `jobs_registry.request_cancel()` records the intent
+(in-memory set *and* the file, so a job started by one process can be stopped
+from another), and workers call `is_cancelled()` between units of work:
+
+* a queued ticker is **never started**;
+* a ticker already inside `screen_ticker()` **finishes** — a Python thread cannot
+  be interrupted, and the honest UI copy says so rather than implying a kill;
+* the 11-call allocation council is **skipped** on a deliberately partial run,
+  while `screening_table.md` is still written for whatever completed, so
+  **Resume** can finish the run later.
+
+Two statuses, not one: `cancelling` while the work unwinds, `cancelled` once it
+has (also inferred when a cancelling job's process disappears). `cancelling`
+still counts as in-flight and stays on the banner — hiding it would recreate the
+invisible-run problem the banner exists to prevent. And `cancelled` is kept
+distinct from `interrupted` because only `interrupted` means work was lost
+*unintentionally*, which is what drives the offer to resume.
+
+Rule of thumb: anything expected to run for more than a few minutes should be
+started detached (`nohup … &`) or via the CLI rather than the Run tab, so a
+server restart is free. The registry makes such runs visible either way — and a
+detached run is the one kind Stop can genuinely force.
+
+
+---
+
+## 15. Dashboard payload budget
+
+The dashboard page grew to **27 MB and ~10 s to load**. The cause was not the
+number of runs but what each ticker row carried: `earnings_brief_md` (8.9 MB
+across 3,072 rows) and `portfolio_decision_md` (10.8 MB) — 72% of the payload —
+shipped for every ticker of every run, when only one report is ever open at a
+time.
+
+`_build_reports_data()` takes the knobs that fix this:
+
+| Parameter | Server | `build-web` |
+|---|---|---|
+| `limit_runs` / `run_offset` | 12, paged | all |
+| `include_bodies` | `False` | `True` |
+| `limit_trades` | **not limited** — see below | all |
+| `limit_reflections` | 40 | all |
+| `refresh_watchlist` | `False` | `True` |
+
+The static build keeps everything: that page has no server behind it to fetch
+from later. The live dashboard fetches the rest on demand — `/api/report` for
+one ticker's markdown (cached client-side onto the record), `/api/runs`,
+`/api/trades?limit=&offset=`, `/api/reflections` for older pages, each behind a
+**Load more** button. `refresh_watchlist=False` keeps the per-ticker live-quote
+round-trip (2–7 s) off the critical path; the page's own `/api/watchlist` call
+fills prices in a moment after first paint.
+
+Result: **1.3 MB, 0.07 s warm** (1.3 s cold) — a 23× smaller payload.
+
+Two invariants worth preserving:
+
+* A trimmed payload must not cost *metadata*. Scores are parsed out of the brief
+  server-side, so `include_bodies=False` still yields `total_score`, `signal`
+  and the rest — only the prose is withheld, flagged by `has_brief` /
+  `has_decision` so the UI can tell "not loaded" from "not there".
+* Views derived from runs (Analyses) show "the N most recent runs of M" and
+  offer the same paging, rather than quietly presenting a partial set as
+  complete.
+
+**Trades are the exception to the paging rule.** The Overview builds its stat
+tiles, charts and equity curve *client-side* from `DATA.trades`, so a truncated
+log does not look incomplete — it silently reports a smaller lifetime P&L
+($28k instead of $143k when the first payload carried 300 of 1,262 fills). The
+whole log is ~800 B a fill, under 1 MB, so it ships in full;
+`/api/trades?limit=&offset=` remains for callers that want a page. Server-side
+`stats` are computed from the untruncated list regardless, so the two can never
+disagree again.
+
+The general rule: **a limit is safe for a list the UI only ever displays, and
+unsafe for one it aggregates.** Runs and reflections are displayed; trades are
+aggregated.
+
+**Handlers that do blocking work must be `def`, not `async def`.** Starlette runs
+a sync handler in a threadpool and an async one on the event loop, so an `async
+def` that blocks stalls every concurrent request: a cold `/api/watchlist` (~8 s
+of quotes) made the Screenings page's 2 ms calendar request look like a five-
+second one. None of these handlers await anything.
+
+**When adding a field to the payload, price it × 3,000 rows.** Anything
+report-sized belongs behind `/api/report`, not in the first paint.
+
+### Post-paint repaints
+
+A fast first paint is not enough: the page also felt stuttery because content
+kept arriving a beat later. Two causes, both now closed.
+
+**The watchlist could not be right at paint time.** TRIGGERED is the one status
+that needs a live quote, so a payload built with `refresh_watchlist=False`
+showed ARMED rows that flipped a second in — and the Overview's alert strip, the
+most actionable thing on the page, always arrived late. Fixed at three levels:
+
+* `cli/server.py` keeps one **stale-while-revalidate snapshot** (`_WL_SNAP`,
+  `watchlist_snapshot()`, 45 s TTL). A request takes whatever is cached and
+  kicks a background refresh; only the first caller after startup can block,
+  and `/` passes `block_if_cold=False` so it never does. `@app.on_event
+  ("startup")` warms it, and `POST /api/watchlist/action` republishes it,
+  since the user overlay it just wrote makes the snapshot wrong by definition.
+* `collect_watchlists()` fetches concurrently and only for rows that actually
+  get a live refresh (not dismissed, not stale). The dominant cost was never
+  the quotes — it was one sequential yfinance *history* call per entry (~150 ms
+  each) for the trigger scan, now `fetch_bars()` behind a 300 s TTL cache.
+  Both caches are process-global: `clear_caches()` exists because one test's
+  bars once answered another test's deliberately-empty fetch.
+* The frontend repaints only on a real change (`wlSig()` over what the UI
+  draws), and the alert lives in a stable `#wl-alert-slot` updated by
+  `wlPaintAlert()` — inserting it used to re-run `renderOverview()`, rebuilding
+  every chart below it to add one strip.
+
+Measured: `/api/watchlist` 2.3–6.7 s → **1 ms**; the confirming boot fetch is
+now byte-identical to the embed, so it repaints nothing.
+
+**`renderScreenings()` re-downloaded the world.** It fetched all of `/api/data`
+(3.2 MB, 1.9 s) on *every* visit to the view, purely to notice runs that had
+finished since load — a full re-download and a main-thread `JSON.parse` for a
+payload almost always identical to the embedded one. Now `_scrCheck()` polls
+`/api/screening-runs` (names + ticker counts + allocation flags, 11 KB, 40 ms)
+and only calls `_scrPullRuns()` (`/api/runs`, first page, merged so loaded pages
+survive) when that signature moves. The first probe just records the signature:
+the page was served with that exact state.
+
+The rule: **after the first paint, fetch to compare, not to replace.** A cheap
+probe plus a change check beats re-fetching a payload you already have.
+
+
+---
+
+## 16. Diagnosing a wedged run
+
+A batch screen that stops writing artifacts while the job still says "running"
+has happened three times, each with a different cause. What settles it quickly:
+
+1. **Is it actually stuck?** Compare the newest file in the run folder against
+   the clock, and check process CPU. Idle + ~0% CPU is a block, not slow work.
+2. **Dump the stacks — this is the step worth doing first.**
+   `sudo .venv/bin/py-spy dump --pid <server pid>` (root is required on macOS,
+   as is `sample`). One dump names the exact blocking line in every thread.
+3. Only then reason about sockets. `lsof -nP -p <pid>` shows where *connections*
+   are, which is not where *threads* are: a 2026-08-13 hang showed 73 Yahoo
+   sockets against 1 DeepSeek and looked like a yfinance problem, while all 8
+   workers were in fact blocked reading a DeepSeek stream. The Yahoo sockets
+   were idle keep-alives.
+
+Timeout policy for DeepSeek lives in `llm_clients/openai_client.py` and splits
+three clocks deliberately — short **connect** (a dead network should surface in
+seconds), **read** that differs by mode (on a stream it bounds the gap between
+chunks, off one it must cover the whole silent reasoning phase), and generous
+write/pool. `DEEPSEEK_MAX_RETRIES` multiplies whichever read timeout applies, so
+raising either compounds.
+
+Recovery is always the same: the completed tickers are on disk, so restart and
+`tradingagents resume --dir <run>` — detached, not through the dashboard.
