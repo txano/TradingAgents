@@ -4,7 +4,11 @@ import unittest
 
 import pytest
 
-from tradingagents.allocation.crowding import compute_crowding_flags, format_crowding
+from tradingagents.allocation.crowding import (
+    compute_crowding_flags,
+    format_crowding,
+    runup_1w_score,
+)
 
 
 @pytest.mark.unit
@@ -70,6 +74,68 @@ class FormatCrowdingTests(unittest.TestCase):
 
     def test_none(self):
         self.assertEqual(format_crowding(None), "Not available")
+
+
+@pytest.mark.unit
+class Runup1wScoreTests(unittest.TestCase):
+    """The 1-week run-up score is contrarian: selling off into the print scores well."""
+
+    def test_bands(self):
+        cases = [
+            (-12.0, 2), (-5.1, 2),          # fell more than 5%
+            (-5.0, 1), (-2.1, 1),           # fell 2-5%
+            (-2.0, 0), (0.0, 0), (1.9, 0),  # roughly flat
+            (2.0, -1), (4.9, -1),           # rose 2-5%
+            (5.0, -2), (18.0, -2),          # rose more than 5%
+        ]
+        for pct, expected in cases:
+            with self.subTest(pct=pct):
+                self.assertEqual(runup_1w_score(pct), expected)
+
+    def test_band_edges_are_monotonic(self):
+        scores = [runup_1w_score(x) for x in (-10, -4, 0, 3, 9)]
+        self.assertEqual(scores, sorted(scores, reverse=True))
+
+    def test_missing_or_bad_input(self):
+        for bad in (None, "n/a", [], {}):
+            self.assertIsNone(runup_1w_score(bad))
+
+    def test_bool_is_not_scored_as_a_number(self):
+        # bools are ints in Python; make sure a stray True doesn't become a score
+        self.assertIn(runup_1w_score(True), (None, 0))
+
+
+@pytest.mark.unit
+class Runup1wFlagTests(unittest.TestCase):
+    def test_flag_when_it_ran_into_the_print(self):
+        flags = compute_crowding_flags({"runup_1w_pct": 7.5})
+        self.assertTrue(any("1w run-up" in f for f in flags))
+
+    def test_no_flag_when_it_sold_off(self):
+        self.assertEqual(compute_crowding_flags({"runup_1w_pct": -7.5}), [])
+
+    def test_no_flag_without_the_field(self):
+        self.assertEqual(compute_crowding_flags({"runup_1m_pct": 2.0}), [])
+
+
+@pytest.mark.unit
+class SectorFlowRenderTests(unittest.TestCase):
+    def test_week_and_sector_render(self):
+        line = format_crowding({
+            "runup_1w_pct": -6.4, "runup_1w_score": 2,
+            "sector_1w_pct": -1.2, "sector_vs_spy_1w": -0.8,
+            "runup_1m_pct": -3.0, "sector_etf": "XLK",
+        })
+        self.assertIn("1w -6.4%", line)
+        self.assertIn("score +2", line)
+        self.assertIn("sector -1.2%", line)
+        self.assertIn("-0.8% vs SPY", line)
+
+    def test_sector_omitted_when_unknown(self):
+        line = format_crowding({"runup_1w_pct": 1.0, "runup_1w_score": 0,
+                                "runup_1m_pct": 2.0, "sector_etf": "XLV"})
+        self.assertIn("1w +1.0%", line)
+        self.assertNotIn("vs SPY", line)
 
 
 if __name__ == "__main__":

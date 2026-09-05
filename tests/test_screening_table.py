@@ -45,26 +45,79 @@ class ScreeningTableTests(unittest.TestCase):
 
 @pytest.mark.unit
 class GatherApiKeysTests(unittest.TestCase):
+    """Key rotation feeds one worker per key, so a missed key is a silent halving.
+
+    The suffix list was hard-coded to `_8`; a .env with 16 keys contributed 8 and
+    a 16-worker screen quietly ran two streams per key. The scan is unbounded now,
+    which also means a test must clear the *whole* namespace, not slots 1-8 — the
+    old test only cleared eight and the real environment leaked through.
+    """
+
+    PREFIX = "DEEPSEEK_API_KEY"
+
+    def setUp(self):
+        self._saved = {k: v for k, v in os.environ.items()
+                       if k == self.PREFIX or k.startswith(self.PREFIX + "_")}
+        for k in self._saved:
+            os.environ.pop(k, None)
+
+    def tearDown(self):
+        for k in [k for k in os.environ
+                  if k == self.PREFIX or k.startswith(self.PREFIX + "_")]:
+            os.environ.pop(k, None)
+        os.environ.update(self._saved)
+
+    def _set(self, **kw):
+        for k, v in kw.items():
+            os.environ[self.PREFIX + ("" if k == "base" else "_" + k[1:])] = v
+
     def test_collects_numbered_keys_dedup_and_blanks(self):
         from cli.commands.common import gather_api_keys
-        # Fully control every DEEPSEEK_API_KEY[_n] slot so the real env can't leak in.
-        slots = ["DEEPSEEK_API_KEY"] + [f"DEEPSEEK_API_KEY_{n}" for n in range(2, 9)]
-        saved = {k: os.environ.get(k) for k in slots}
+        self._set(base="a", n2="a", n3="b")          # n2 duplicates the base key
+        os.environ[self.PREFIX + "_4"] = "   "        # blank → skipped
+        self.assertEqual(gather_api_keys("deepseek"), ["a", "b"])
+        self.assertEqual(gather_api_keys("DeepSeek"), ["a", "b"])   # case-insensitive
+        self.assertEqual(gather_api_keys("nope"), [])
+
+    def test_reads_past_the_old_eight_key_ceiling(self):
+        from cli.commands.common import gather_api_keys
+        self._set(base="k1", **{f"n{n}": f"k{n}" for n in range(2, 17)})
+        self.assertEqual(len(gather_api_keys("deepseek")), 16)
+
+    def test_orders_numerically_not_lexically(self):
+        """_10 must follow _9, not _1 — workers map to keys by index."""
+        from cli.commands.common import gather_api_keys
+        self._set(base="k1", **{f"n{n}": f"k{n}" for n in range(2, 13)})
+        self.assertEqual(gather_api_keys("deepseek"),
+                         [f"k{n}" for n in range(1, 13)])
+
+    def test_tolerates_gaps(self):
+        from cli.commands.common import gather_api_keys
+        self._set(base="a", n9="i", n16="p")          # _2.._8 absent
+        self.assertEqual(gather_api_keys("deepseek"), ["a", "i", "p"])
+
+    def test_ignores_non_numeric_suffixes(self):
+        from cli.commands.common import gather_api_keys
+        self._set(base="a")
+        os.environ[self.PREFIX + "_BACKUP"] = "nope"
+        os.environ[self.PREFIX + "_2_OLD"] = "nope"
+        self.assertEqual(gather_api_keys("deepseek"), ["a"])
+
+    def test_does_not_match_a_longer_provider_var(self):
+        from cli.commands.common import gather_api_keys
+        saved = os.environ.get("AZURE_DEEPSEEK_API_KEY")
+        os.environ["AZURE_DEEPSEEK_API_KEY"] = "wrong"
+        self._set(base="a")
         try:
-            for k in slots:
-                os.environ.pop(k, None)
-            os.environ["DEEPSEEK_API_KEY"] = "a"
-            os.environ["DEEPSEEK_API_KEY_2"] = "a"   # duplicate → skipped
-            os.environ["DEEPSEEK_API_KEY_3"] = "b"
-            self.assertEqual(gather_api_keys("deepseek"), ["a", "b"])
-            self.assertEqual(gather_api_keys("DeepSeek"), ["a", "b"])  # case-insensitive
-            self.assertEqual(gather_api_keys("nope"), [])
+            self.assertEqual(gather_api_keys("deepseek"), ["a"])
         finally:
-            for k, v in saved.items():
-                if v is None:
-                    os.environ.pop(k, None)
-                else:
-                    os.environ[k] = v
+            os.environ.pop("AZURE_DEEPSEEK_API_KEY", None)
+            if saved is not None:
+                os.environ["AZURE_DEEPSEEK_API_KEY"] = saved
+
+    def test_unset_provider_returns_empty(self):
+        from cli.commands.common import gather_api_keys
+        self.assertEqual(gather_api_keys("deepseek"), [])
 
 
 if __name__ == "__main__":

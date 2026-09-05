@@ -3,8 +3,16 @@
 A beat that's already priced in is the classic "beat-and-fall" trap. This module
 measures how crowded a name is going into the print:
 
-  * run-up — 1m / 3m return, absolute and relative to its sector ETF (a big run
-    means the beat is largely discounted; the single best predictor of beat-and-fall)
+  * run-up — 1w / 1m / 3m return, absolute and relative to its sector ETF (a big run
+    means the beat is largely discounted; the single best predictor of beat-and-fall).
+    The **1-week** window is the sharpest of the three: measured over 1,128 screened
+    prints (Jul-Aug 2026) it correlates -0.157 with the day+10 return, against
+    +0.009 / -0.004 / -0.053 for the beat / guidance / setup scores. Names that fell
+    >5% into the print returned +6.1% by day+10; names that rose >5% returned +0.7%.
+  * sector flow — the sector ETF's own 1-week return, and its lead over SPY. Same
+    contrarian sign (-0.121 vs day+10) but largely redundant with the name's own
+    run-up; it discriminates mainly when the name itself has run (a name up >2% into
+    the print returned +1.3% when its sector lagged and +0.1% when it led).
   * distance from the 52-week high — within a few % = limited upside surprise room,
     large air pocket below (asymmetry against a long)
   * revision momentum — a cluster of upward EPS-estimate revisions means the whisper
@@ -50,6 +58,18 @@ RUNUP_ABS_MAX = 12.0         # 1m absolute return above this = crowded
 RUNUP_VS_SECTOR_MAX = 8.0    # 1m return above the sector by this = crowded
 DIST_52W_HIGH_MAX = 3.0      # within this % of the 52w high = poor asymmetry
 REVISION_UP_COUNT = 3        # ≥ this many net up-revisions in 30d = whisper above consensus
+RUNUP_1W_MAX = 5.0           # 1w run-up above this = the move is already being paid for
+
+# 1-week run-up score bands (% move over the 5 sessions into the print). The edges are
+# the measured buckets, not round numbers; +2 = fell into the print (best observed
+# forward return), −2 = ran into it. Recalibrate once the sample spans more than one
+# earnings season — these come from Jul–Aug 2026 only.
+RUNUP_1W_BANDS = (
+    (-5.0, 2),    # fell more than 5%
+    (-2.0, 1),    # fell 2–5%
+    (2.0, 0),     # roughly flat
+    (5.0, -1),    # rose 2–5%
+)                 # rose more than 5% → −2
 
 # Tiny per-process, per-day cache so a screen of N same-sector names doesn't
 # re-fetch the same ETF N times.
@@ -93,7 +113,26 @@ def compute_crowding_flags(c: dict) -> list[str]:
         flags.append(f"within {dist:.0f}% of 52w high")
     if isinstance(up, int) and up >= REVISION_UP_COUNT and (down is None or up > down):
         flags.append(f"{up} up-revisions/30d (whisper > consensus)")
+
+    r1w = c.get("runup_1w_pct")
+    if isinstance(r1w, (int, float)) and r1w >= RUNUP_1W_MAX:
+        flags.append(f"1w run-up {r1w:+.0f}% into the print")
     return flags
+
+
+def runup_1w_score(runup_1w_pct) -> int | None:
+    """Map the 1-week run-up into the print to a -2..+2 contrarian score.
+
+    Positive = the name sold off into the print (historically the better setup);
+    negative = it ran up (the beat is more likely already paid for). Returns None
+    when the run-up could not be computed.
+    """
+    if not isinstance(runup_1w_pct, (int, float)):
+        return None
+    for edge, score in RUNUP_1W_BANDS:
+        if runup_1w_pct < edge:
+            return score
+    return -2
 
 
 def format_crowding(c: dict | None) -> str:
@@ -104,7 +143,20 @@ def format_crowding(c: dict | None) -> str:
     def _na(v, fmt):
         return fmt.format(v) if isinstance(v, (int, float)) else "n/a"
 
+    score = c.get("runup_1w_score")
+    week = (
+        f"1w {_na(c.get('runup_1w_pct'), '{:+.1f}%')} (score {score:+d})"
+        if isinstance(score, int) else f"1w {_na(c.get('runup_1w_pct'), '{:+.1f}%')}"
+    )
+    sector_1w = c.get("sector_1w_pct")
+    if isinstance(sector_1w, (int, float)):
+        week += f", sector {sector_1w:+.1f}%"
+        lead = c.get("sector_vs_spy_1w")
+        if isinstance(lead, (int, float)):
+            week += f" ({lead:+.1f}% vs SPY)"
+
     return (
+        f"{week} · "
         f"1m {_na(c.get('runup_1m_pct'), '{:+.0f}%')} "
         f"({_na(c.get('runup_1m_vs_sector'), '{:+.0f}%')} vs {c.get('sector_etf', '?')}) · "
         f"3m {_na(c.get('runup_3m_pct'), '{:+.0f}%')} · "
@@ -117,7 +169,7 @@ def format_crowding(c: dict | None) -> str:
 # Data fetch (yfinance — guarded)
 # ---------------------------------------------------------------------------
 
-def _returns(closes, spans=(21, 63)) -> dict:
+def _returns(closes, spans=(5, 21, 63)) -> dict:
     """Trailing % returns over the given trading-day spans, newest bar last."""
     out = {}
     try:
@@ -133,14 +185,14 @@ def _returns(closes, spans=(21, 63)) -> dict:
 
 
 def _etf_returns(etf: str, _safe) -> dict:
-    """1m/3m returns for a sector ETF, cached per process per day."""
+    """1w/1m/3m returns for a sector ETF, cached per process per day."""
     key = (etf, date.today().isoformat())
     with _ETF_LOCK:
         if key in _ETF_CACHE:
             return _ETF_CACHE[key]
     import yfinance as yf
     hist = _safe(lambda: yf.Ticker(etf).history(period="4mo"))
-    rets = {21: None, 63: None}
+    rets = {5: None, 21: None, 63: None}
     if hist is not None and not getattr(hist, "empty", True):
         rets = _returns(list(hist["Close"]))
     with _ETF_LOCK:
@@ -152,6 +204,10 @@ def fetch_crowding(ticker: str, sector: str | None = None) -> dict:
     """Compute run-up, 52w-high distance, and revision momentum for a ticker."""
     out = {
         "sector_etf":          None,
+        "runup_1w_pct":        None,
+        "runup_1w_score":      None,
+        "sector_1w_pct":       None,
+        "sector_vs_spy_1w":    None,
         "runup_1m_pct":        None,
         "runup_3m_pct":        None,
         "runup_1m_vs_sector":  None,
@@ -177,8 +233,10 @@ def fetch_crowding(ticker: str, sector: str | None = None) -> dict:
     hist = _safe(lambda: stock.history(period="4mo"))
     if hist is not None and not getattr(hist, "empty", True):
         rets = _returns(list(hist["Close"]))
+        out["runup_1w_pct"] = _round(rets.get(5))
         out["runup_1m_pct"] = _round(rets.get(21))
         out["runup_3m_pct"] = _round(rets.get(63))
+        out["runup_1w_score"] = runup_1w_score(out["runup_1w_pct"])
 
     etf = SECTOR_ETF.get((sector or "").strip(), _FALLBACK_ETF)
     out["sector_etf"] = etf
@@ -187,6 +245,14 @@ def fetch_crowding(ticker: str, sector: str | None = None) -> dict:
         out["runup_1m_vs_sector"] = _round(out["runup_1m_pct"] - etf_rets[21])
     if out["runup_3m_pct"] is not None and etf_rets.get(63) is not None:
         out["runup_3m_vs_sector"] = _round(out["runup_3m_pct"] - etf_rets[63])
+
+    # Sector money flow into the print: the sector ETF's own week, and its lead over
+    # the broad tape. Both are cached per ETF per day, so a 40-name screen costs at
+    # most one extra fetch per sector plus one for SPY.
+    out["sector_1w_pct"] = _round(etf_rets.get(5))
+    spy_rets = _etf_returns(_FALLBACK_ETF, _safe) if etf != _FALLBACK_ETF else etf_rets
+    if out["sector_1w_pct"] is not None and spy_rets.get(5) is not None:
+        out["sector_vs_spy_1w"] = _round(out["sector_1w_pct"] - spy_rets[5])
 
     fast = _safe(lambda: stock.fast_info)
     if fast is not None:
