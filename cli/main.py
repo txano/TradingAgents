@@ -1283,6 +1283,7 @@ from cli.commands.allocate  import allocate, allocation_weights
 from cli.commands.ibkr      import import_ibkr, backfill_trades
 from cli.commands.reports   import build_web
 from cli.commands.dashboard import dashboard
+from cli.commands.resume    import resume
 
 app.command("earnings-calendar")(earnings_calendar)
 app.command()(screen)
@@ -1299,6 +1300,7 @@ app.command("import-ibkr")(import_ibkr)
 app.command("backfill-trades")(backfill_trades)
 app.command("build-web")(build_web)
 app.command()(dashboard)
+app.command()(resume)
 
 
 if __name__ == "__main__":

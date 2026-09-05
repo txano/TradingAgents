@@ -15,13 +15,32 @@ from pathlib import Path
 RUN_PREFIXES = ("screening_", "earnings_")
 
 
+def run_sort_key(path: "Path | str") -> tuple:
+    """Newest-first ordering key for a run dir: (label date, run timestamp).
+
+    Sorting on the raw name looks equivalent but is not — the prefix sorts
+    first, so every ``screening_*`` run outranks every ``earnings_*`` one
+    whatever their dates. That buried five months of August runs beneath May
+    ones, and, because the dashboard only loads the newest page, left the
+    earnings calendar unable to match any loaded run.
+
+    Names are ``{prefix}_{YYYY-MM-DD}_{YYYYMMDD}_{HHMMSS}``; anything that does
+    not parse sorts last rather than raising.
+    """
+    name = Path(path).name
+    parts = name.split("_")
+    label = parts[1] if len(parts) > 1 and len(parts[1]) == 10 and parts[1][4] == "-" else ""
+    stamp = "_".join(parts[2:]) if len(parts) > 2 else ""
+    return (label, stamp, name)
+
+
 def runs_root(reports_dir: str | Path = "reports") -> Path:
     """Canonical parent dir that new screening runs are written to."""
     return Path(reports_dir) / "earnings"
 
 
 def iter_run_dirs(reports_dir: str | Path = "reports") -> list[Path]:
-    """All batch screening run dirs, newest first (by name).
+    """All batch screening run dirs, newest first (see :func:`run_sort_key`).
 
     Looks under ``reports/earnings/`` (current layout) and the legacy repo root,
     matching both ``screening_*`` and ``earnings_*`` prefixes. ``reports_dir`` is
@@ -45,4 +64,4 @@ def iter_run_dirs(reports_dir: str | Path = "reports") -> list[Path]:
         if r not in seen:
             seen.add(r)
             uniq.append(d)
-    return sorted(uniq, key=lambda p: p.name, reverse=True)
+    return sorted(uniq, key=run_sort_key, reverse=True)

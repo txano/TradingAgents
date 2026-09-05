@@ -28,8 +28,16 @@ class ReportsLayoutTests(unittest.TestCase):
         self.assertIn("earnings_2026-06-10_bbb", names)
         self.assertIn("screening_2026-04-01_legacy", names)
         self.assertNotIn("not_a_run", names)
-        # newest-first by name
-        self.assertEqual(names, sorted(names, reverse=True))
+        # Newest-first by *date*, not by name. Sorting on the name puts every
+        # screening_ run above every earnings_ one ('s' > 'e') regardless of
+        # date — which is exactly the bug this ordering replaced, and this
+        # fixture reproduces it: the June earnings_ run must lead the May
+        # screening_ one.
+        self.assertEqual(names, [
+            "earnings_2026-06-10_bbb",
+            "screening_2026-05-01_aaa",
+            "screening_2026-04-01_legacy",
+        ])
 
     def test_empty_reports_dir(self):
         root = Path(tempfile.mkdtemp())

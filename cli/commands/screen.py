@@ -2,6 +2,7 @@
 
 import datetime
 import json
+import logging
 import threading
 from pathlib import Path
 
@@ -30,9 +31,11 @@ from cli.utils import (
     select_research_depth, ask_gemini_thinking_config, ask_openai_reasoning_effort,
     ask_anthropic_effort, get_analysis_date,
 )
+from tradingagents.llm_clients.errors import describe_exc
 from cli.commands.common import _fetch_sector, gather_api_keys, save_report_to_disk
 
 console = Console()
+logger = logging.getLogger(__name__)
 
 _DEFAULT_ANALYSTS = ["market", "social", "news", "fundamentals"]
 
@@ -121,11 +124,16 @@ def screen_ticker(
             "fundamentals_summary": score.get("fundamentals_summary", ""),
         }
     except Exception as exc:
+        # Log the full traceback before collapsing to a one-liner: providers hide
+        # the real fault behind an opaque message (the openai SDK turns *every*
+        # transport-layer exception into APIConnectionError("Connection error."))
+        # and a bare str(exc) makes a failed screen undiagnosable after the fact.
+        logger.exception("[%s] screen failed", ticker)
         return {
             "ticker": ticker, "sector": sector, "ta_decision": "ERROR", "brief": "",
             "earnings_date": "unknown", "beat_score": 0, "guidance_score": 0,
             "setup_score": 0, "total_score": -99, "signal": "ERROR",
-            "confidence": "—", "one_liner": str(exc),
+            "confidence": "—", "one_liner": describe_exc(exc),
         }
 
 
