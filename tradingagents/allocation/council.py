@@ -11,18 +11,27 @@ Pipeline:
      and produces the final allocation report.
 """
 
+import logging
 import re
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from tradingagents.allocation.common import parse_allocation
+from tradingagents.llm_clients.errors import describe_exc
 from tradingagents.allocation.regime import VIX_RISK_OFF, format_regime, sizing_multiplier
 from tradingagents.allocation.validator import (
     IMPLIED_MOVE_LOSS_CAP,
+    MAX_POSITIONS,
     asymmetry_advisories,
     crowding_advisories,
     format_advisories,
     format_violations,
     validate_allocation,
+)
+from tradingagents.allocation.watchlist import (
+    WATCH_MAX_EXPIRY_SESSIONS,
+    WATCH_MIN_FUNDAMENTALS,
+    WATCH_MIN_TRIGGER_FRACTION,
 )
 from tradingagents.allocation.weights import DEFAULTS as _WEIGHT_DEFAULTS
 
@@ -226,6 +235,21 @@ NOT treat selling as bearish on its own. Insider buying supports a long; it does
 not by itself override an unfavorable EV/asymmetry or a beat-and-fall setup.
 - Historical lessons from past trades are provided — apply them when relevant; \
 they represent real patterns observed in this specific strategy.
+- WATCH — the fourth outcome (#19), between BUY and SKIP. For QUALITY names \
+(fundamentals_score ≥ +{watch_min_fund:d}) where the pre-print entry is \
+unattractive — EV n/a with a high fade rate or low coverage, heavy crowding, or \
+Low/Medium confidence on a business you'd want to own — do not force BUY-or-SKIP. \
+Mark direction WATCH: allocate $0 now, skip the print, and pre-commit a \
+post-earnings dislocation entry. Set `trigger_price` at least \
+{watch_min_frac:g} × the implied move below the current price (deeper when \
+E[move|miss] is larger — the market overreacting to the downside is the entry), \
+`watch_amount` (dollars reserved from cash — must fit inside cash_reserved), and \
+`watch_expiry_sessions` (2–{watch_max_expiry:d} sessions after the print; after \
+that the dislocation premise is stale). If the stock trades at or below the \
+trigger inside the window, it is a buy-the-dip candidate with the same thesis; \
+quality names that gap down on an in-line print tend to rebound. WATCH rows do \
+not count toward the {max_positions:d}-position cap. Use sparingly — only names \
+you would genuinely own at the trigger price.
 - Cash not deployed is acceptable; never force marginal trades.
 """
 
@@ -270,7 +294,15 @@ Produce the final Portfolio Allocation Report:
 
 | # | Ticker | Direction | Amount ($) | % Budget | Conviction | Earnings | Rationale |
 |---|--------|-----------|------------|----------|------------|----------|-----------|
-[one row per ticker — include every ticker, even those with $0 / SKIP]
+[one row per ticker — include every ticker, even those with $0 / SKIP or WATCH]
+
+---
+### Watchlist
+
+[Only when there are WATCH tickers, else write "None." One row per WATCH name:]
+
+| Ticker | Trigger ($) | Below Spot | Reserved ($) | Window | Entry Thesis |
+|--------|-------------|------------|--------------|--------|--------------|
 
 ---
 ### Summary
@@ -292,11 +324,14 @@ Produce the final Portfolio Allocation Report:
   "allocations": [
     {{
       "ticker": "<ticker>",
-      "direction": "<BUY|SHORT|SKIP>",
-      "amount": <integer, 0 for SKIP>,
+      "direction": "<BUY|SHORT|SKIP|WATCH>",
+      "amount": <integer, 0 for SKIP and WATCH>,
       "pct_of_budget": <float, one decimal>,
       "conviction": "<High|Medium|Low>",
-      "rationale": "<one sentence max 130 chars>"
+      "rationale": "<one sentence max 130 chars>",
+      "trigger_price": <float — WATCH rows only, omit otherwise>,
+      "watch_amount": <integer — WATCH rows only, reserved from cash>,
+      "watch_expiry_sessions": <integer 2-5 — WATCH rows only>
     }}
   ]
 }}
@@ -627,18 +662,29 @@ def run_council(
         im_cap_pct=IMPLIED_MOVE_LOSS_CAP * regime_mult * 100,
         im_cap=int(budget * IMPLIED_MOVE_LOSS_CAP * regime_mult),
         vix_risk_off=VIX_RISK_OFF,
+        watch_min_fund=WATCH_MIN_FUNDAMENTALS,
+        watch_min_frac=WATCH_MIN_TRIGGER_FRACTION,
+        watch_max_expiry=WATCH_MAX_EXPIRY_SESSIONS,
+        max_positions=MAX_POSITIONS,
+    )
+    # For big batches the synthesis re-states every ticker on top of 10 advisor
+    # outputs; drop the raw report bodies there to keep the request tractable.
+    synthesis_sections = (
+        ticker_sections
+        if len(ticker_contexts) <= CONDENSED_SECTIONS_THRESHOLD
+        else _format_sections(ticker_contexts, include_reports=False)
     )
     synthesis_human = _SYNTHESIS_HUMAN.format(
         budget=budget,
         trade_date=trade_date,
         regime_block=format_regime(regime),
-        ticker_sections=ticker_sections,
+        ticker_sections=synthesis_sections,
         perspectives=perspectives_block,
         reviews=reviews_block,
         lessons_block=lessons_block or "_No lessons yet — run more trades and use `tradingagents reflect` after each exit._",
     )
 
-    report = _call(llm, synthesis_system, synthesis_human)
+    report = _call(llm, synthesis_system, synthesis_human, progress_cb=_log, label="Synthesis")
 
     # ── Step 5: deterministic constraint check + one corrective re-prompt ─────
     _log("Validating allocation constraints...")

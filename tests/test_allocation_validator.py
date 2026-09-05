@@ -338,6 +338,88 @@ class ImpliedMoveCapTests(unittest.TestCase):
 
 
 @pytest.mark.unit
+class WatchRowTests(unittest.TestCase):
+    """#19 WATCH rows: structure, quality gate, trigger depth, cash reservation."""
+
+    def _ctx(self, fund=4, spot=100.0, move=6.0):
+        return [{
+            "ticker": "AAA", "sector": "Tech", "weighted_score": 6.0,
+            "fundamentals_score": fund, "spot_price": spot, "implied_move_pct": move,
+        }]
+
+    def _watch(self, amount=0, trigger=92.0, reserve=10_000, expiry=3):
+        row = {"ticker": "AAA", "direction": "WATCH", "amount": amount,
+               "pct_of_budget": 0.0, "conviction": "Medium",
+               "trigger_price": trigger, "watch_amount": reserve,
+               "watch_expiry_sessions": expiry}
+        return {"total_budget": BUDGET, "total_deployed": 0,
+                "cash_reserved": BUDGET, "allocations": [row]}
+
+    def test_valid_watch_row_passes(self):
+        self.assertEqual(validate_allocation(self._watch(), BUDGET, self._ctx()), [])
+
+    def test_watch_with_nonzero_amount_violates(self):
+        violations = validate_allocation(self._watch(amount=5_000), BUDGET, self._ctx())
+        self.assertTrue(any("WATCH allocates $0" in v for v in violations))
+
+    def test_watch_needs_positive_reserve_and_trigger(self):
+        violations = validate_allocation(self._watch(reserve=0), BUDGET, self._ctx())
+        self.assertTrue(any("watch_amount" in v for v in violations))
+        violations = validate_allocation(self._watch(trigger=None), BUDGET, self._ctx())
+        self.assertTrue(any("trigger_price" in v for v in violations))
+
+    def test_watch_on_weak_fundamentals_violates(self):
+        violations = validate_allocation(self._watch(), BUDGET, self._ctx(fund=0))
+        self.assertTrue(any("quality names" in v for v in violations))
+
+    def test_trigger_above_spot_violates(self):
+        violations = validate_allocation(self._watch(trigger=105.0), BUDGET, self._ctx())
+        self.assertTrue(any("not below" in v for v in violations))
+
+    def test_shallow_trigger_violates(self):
+        # ±6% implied move → trigger must sit ≥3% below spot; 1% is too shallow
+        violations = validate_allocation(self._watch(trigger=99.0), BUDGET, self._ctx())
+        self.assertTrue(any("dislocation" in v for v in violations))
+
+    def test_watch_does_not_count_toward_position_cap(self):
+        rows = [_row(t, "BUY", 10_000) for t in ("AAA", "BBB", "CCC", "DDD")]
+        rows += [_row(t, "BUY", 10_000) for t in ("EEE", "FFF")]
+        watch = {"ticker": "GGG", "direction": "WATCH", "amount": 0,
+                 "trigger_price": 92.0, "watch_amount": 5_000,
+                 "watch_expiry_sessions": 3}
+        alloc = _alloc(rows + [watch])
+        contexts = [
+            {"ticker": t, "sector": f"S{i}", "weighted_score": 6.0}
+            for i, t in enumerate(("AAA", "BBB", "CCC", "DDD", "EEE", "FFF"))
+        ] + [{"ticker": "GGG", "sector": "S9", "weighted_score": 6.0,
+              "fundamentals_score": 4, "spot_price": 100.0, "implied_move_pct": 6.0}]
+        violations = validate_allocation(alloc, BUDGET, contexts)
+        # 6 BUYs + 1 WATCH: no max-positions violation (WATCH exempt)
+        self.assertFalse(any("maximum" in v for v in violations))
+
+    def test_watch_reserve_must_fit_in_cash(self):
+        alloc = self._watch(reserve=20_000)
+        alloc["cash_reserved"] = 10_000
+        alloc["total_deployed"] = 90_000
+        # add a BUY consuming the rest of the budget so arithmetic holds
+        alloc["allocations"].append(
+            {"ticker": "BBB", "direction": "BUY", "amount": 90_000 / 3,
+             "pct_of_budget": 30.0, "conviction": "High"})
+        alloc["allocations"].append(
+            {"ticker": "CCC", "direction": "BUY", "amount": 90_000 / 3,
+             "pct_of_budget": 30.0, "conviction": "High"})
+        alloc["allocations"].append(
+            {"ticker": "DDD", "direction": "BUY", "amount": 90_000 / 3,
+             "pct_of_budget": 30.0, "conviction": "High"})
+        contexts = self._ctx() + [
+            {"ticker": t, "sector": f"S{i}", "weighted_score": 12.0}
+            for i, t in enumerate(("BBB", "CCC", "DDD"))
+        ]
+        violations = validate_allocation(alloc, BUDGET, contexts)
+        self.assertTrue(any("exceed cash_reserved" in v for v in violations))
+
+
+@pytest.mark.unit
 class ParseAllocationTests(unittest.TestCase):
     def test_prefers_anchored_block(self):
         report = (

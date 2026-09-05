@@ -7,6 +7,11 @@ can trigger a corrective re-prompt or at least be surfaced in the report.
 """
 
 from tradingagents.allocation.regime import sizing_multiplier
+from tradingagents.allocation.watchlist import (
+    WATCH_MAX_EXPIRY_SESSIONS,
+    WATCH_MIN_FUNDAMENTALS,
+    WATCH_MIN_TRIGGER_FRACTION,
+)
 
 SINGLE_POSITION_CAP = 0.30   # max fraction of budget per position
 SECTOR_CAP = 0.35            # max fraction of budget per sector
@@ -38,6 +43,60 @@ def _num(value, default=0.0) -> float:
 def _regime_multiplier(regime: dict | None, ctx: dict | None) -> float:
     """#15b sizing multiplier: ×0.5 in risk-off, ×0.5 again on a macro collision."""
     return sizing_multiplier(regime, (ctx or {}).get("macro_collisions"))
+
+
+def _check_watch_row(ticker: str, r: dict, amount: float, ctx: dict | None) -> list[str]:
+    """Structural checks for a WATCH row (#19): quality gate, trigger depth, fields."""
+    violations: list[str] = []
+    ctx = ctx or {}
+
+    if amount > 0:
+        violations.append(f"{ticker}: WATCH allocates $0 now but has amount ${amount:,.0f}.")
+
+    watch_amount = _num(r.get("watch_amount"), default=None)
+    if watch_amount is None or watch_amount <= 0:
+        violations.append(f"{ticker}: WATCH requires a positive watch_amount (reserved from cash).")
+
+    expiry = r.get("watch_expiry_sessions")
+    if expiry is not None and not (
+        isinstance(expiry, (int, float)) and 1 <= expiry <= WATCH_MAX_EXPIRY_SESSIONS
+    ):
+        violations.append(
+            f"{ticker}: watch_expiry_sessions must be 1–{WATCH_MAX_EXPIRY_SESSIONS} "
+            f"(got {expiry!r})."
+        )
+
+    fund = ctx.get("fundamentals_score")
+    if isinstance(fund, (int, float)) and fund < WATCH_MIN_FUNDAMENTALS:
+        violations.append(
+            f"{ticker}: WATCH is for quality names — fundamentals_score "
+            f"{fund:+.0f} is below the +{WATCH_MIN_FUNDAMENTALS} minimum; use SKIP."
+        )
+
+    trigger = _num(r.get("trigger_price"), default=None)
+    if trigger is None or trigger <= 0:
+        violations.append(f"{ticker}: WATCH requires a positive trigger_price.")
+        return violations
+
+    spot = ctx.get("spot_price")
+    if isinstance(spot, (int, float)) and spot > 0:
+        if trigger >= spot:
+            violations.append(
+                f"{ticker}: trigger_price ${trigger:,.2f} is not below the "
+                f"current price ${spot:,.2f}."
+            )
+        else:
+            move = ctx.get("implied_move_pct")
+            if isinstance(move, (int, float)) and move > 0:
+                min_drop = WATCH_MIN_TRIGGER_FRACTION * move
+                drop_pct = (spot - trigger) / spot * 100
+                if drop_pct < min_drop * (1 - _REL_TOL):
+                    violations.append(
+                        f"{ticker}: trigger ${trigger:,.2f} is only {drop_pct:.1f}% below "
+                        f"spot — a real dislocation needs ≥ {min_drop:.1f}% "
+                        f"({WATCH_MIN_TRIGGER_FRACTION:g} × the ±{move:.1f}% implied move)."
+                    )
+    return violations
 
 
 def validate_allocation(
@@ -88,6 +147,14 @@ def validate_allocation(
         if direction == "SKIP":
             if amount > 0:
                 violations.append(f"{ticker}: marked SKIP but has a non-zero amount (${amount:,.0f}).")
+            continue
+
+        # WATCH rows (#19): $0 allocated now, a reserved amount + trigger level
+        # for a conditional post-earnings entry. Not an open position, so they
+        # don't count toward the position cap or budget arithmetic; the reserved
+        # dollars are checked against cash after the arithmetic section.
+        if direction == "WATCH":
+            violations.extend(_check_watch_row(ticker, r, amount, ctx_by_ticker.get(ticker)))
             continue
         active.append((ticker, direction, amount, r))
 
@@ -179,6 +246,17 @@ def validate_allocation(
         violations.append(
             f"deployed (${deployed_actual:,.0f}) + cash_reserved (${cash:,.0f}) "
             f"does not equal the budget (${budget:,.0f})."
+        )
+
+    # WATCH reservations (#19) are earmarked from cash, so they must fit in it.
+    watch_total = sum(
+        _num(r.get("watch_amount")) for r in rows
+        if str(r.get("direction", "")).upper() == "WATCH"
+    )
+    if watch_total > 0 and cash is not None and watch_total > cash * (1 + _REL_TOL):
+        violations.append(
+            f"Watchlist reservations (${watch_total:,.0f}) exceed cash_reserved "
+            f"(${cash:,.0f}) — watch amounts must fit inside cash."
         )
     if deployed_actual > budget * (1 + _REL_TOL):
         violations.append(

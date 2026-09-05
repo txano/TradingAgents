@@ -15,6 +15,7 @@ from tradingagents.allocation.asymmetry import build_asymmetry, format_asymmetry
 from tradingagents.allocation.crowding import fetch_crowding, format_crowding
 from tradingagents.allocation.insider import build_insider, format_insider
 from tradingagents.allocation.regime import fetch_regime, format_collisions, macro_collisions
+from tradingagents.allocation.watchlist import build_watchlist, save_watchlist
 from tradingagents.earnings.peers import build_peer_readthrough, format_peer_oneliner
 from tradingagents.allocation.weights import apply_weights, load_weights
 from tradingagents.learning.lessons import distill_lessons, load_cached_lessons, load_reflections
@@ -119,6 +120,13 @@ class AllocationLayer:
         if save and screening_dir:
             out = Path(screening_dir) / "allocation.md"
             out.write_text(report, encoding="utf-8")
+            # Persist WATCH rows (#19) as watchlist.json at the run root so the
+            # dashboard can track trigger status after the prints.
+            try:
+                entries = build_watchlist(parse_allocation(report), contexts, trade_date)
+                save_watchlist(entries, screening_dir)
+            except Exception as exc:
+                logger.warning("watchlist save failed: %s", exc)
 
         return report
 
@@ -245,8 +253,9 @@ class AllocationLayer:
                     except Exception:
                         pricing = None
                 ctx["pricing_summary"] = format_pricing(pricing)
-                # Raw implied move for the #15a loss-cap check in validator.py
+                # Raw values for the #15a loss-cap and #19 WATCH-trigger checks
                 ctx["implied_move_pct"] = (pricing or {}).get("implied_move_pct")
+                ctx["spot_price"] = (pricing or {}).get("price")
 
                 # Payoff asymmetry / EV (#14a) — cached at screening time, live fallback
                 asym = None
@@ -328,6 +337,7 @@ class AllocationLayer:
                 ctx.setdefault("fundamentals_summary", "")
                 ctx.setdefault("pricing_summary",      "Not available")
                 ctx.setdefault("implied_move_pct",     None)
+                ctx.setdefault("spot_price",           None)
                 ctx.setdefault("asymmetry",            {})
                 ctx.setdefault("asymmetry_summary",    "Not available")
                 ctx.setdefault("crowding",             {})
